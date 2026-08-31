@@ -75,6 +75,11 @@ npm link          # global CLI aliases
 | `clipmural` | Write native Mural stickies / diagrams |
 | `reclip` | Replay clipboard history |
 
+> 💡 **Give your agent DevTools eyes.** In Chrome, right-click inside the console → **Copy console**, then
+> run `clipconsole` (or the `cliplens_analyze` tool). ClipLens strips **99%+ of the noise** — keeping the
+> signal (CORS, HTTP statuses, `net::ERR_`, failed requests) — so your agent reads only what matters. No
+> screenshots, no copy-paste-scroll.
+
 ## <img src="assets/icons/connect.png" width="32" height="32" align="middle"> MCP server (agents)
 
 ClipLens ships an MCP server so agents (Claude Code, Kiro, …) can read/write the clipboard as tools.
