@@ -1,14 +1,17 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="ClipLens — the clipboard is the API" width="100%">
+  <img src="assets/hero.png" alt="ClipLens" width="100%">
 </p>
 
 <h1 align="center">ClipLens</h1>
 
-<p align="center"><b>The clipboard is the API.</b></p>
+<p align="center"><b>The complete, universal clipboard skill for any AI agent.</b><br/>
+<sub>any provider · no API keys · lenses read, pens write</sub></p>
 
-ClipLens reads and writes the system clipboard in the *native formats real apps use* — so an AI agent or a
-CLI can generate a Slack message with real bold/links, a Mural sticky note, an Outlook-ready HTML email, or
-read back a Figma/Mural selection — with **no API keys, no OAuth, no marketplace approval**. Just:
+Drop ClipLens into any agent — Claude Code, Kiro, Copilot, Gemini, Cursor, your own — and it can read and
+write the system clipboard in the *native formats real apps use*: generate a Slack message with real
+bold/links, a Mural sticky note, an Outlook-ready HTML email, or read back what you copied from Figma/Mural
+or a console — with **no API keys, no OAuth, no marketplace approval**. It's provider-agnostic (an MCP server
++ a plain [`SKILL.md`](SKILL.md)) and it just works. Just:
 
 > **generate → clipboard → paste.**
 
@@ -17,8 +20,8 @@ speaks it. ClipLens turns that into a universal adapter layer.
 
 ## <img src="assets/icons/wand.png" width="32" height="32" align="middle"> Drive it in plain English
 
-No flags to memorize. ClipLens ships as an **agent skill** ([`SKILL.md`](SKILL.md)) — drop it into Claude
-Code or Kiro, and just *say what you want*:
+No flags to memorize. ClipLens ships as a **provider-agnostic agent skill** ([`SKILL.md`](SKILL.md)) — drop
+it into any agent (Claude Code, Kiro, Copilot, Gemini, Cursor…) and just *say what you want*:
 
 > *"paste this as a Slack message"* · *"read the Mural I just copied"* · *"put this table on my clipboard for Outlook"* · *"clean up this console dump"*
 
