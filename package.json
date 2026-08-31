@@ -1,7 +1,7 @@
 {
   "name": "cliplens",
   "version": "0.1.0",
-  "description": "The complete, universal clipboard skill for any AI agent (any provider) — read/write native app clipboard formats (Slack, Mural, Figma, Outlook) with no API keys. Lenses read, pens write.",
+  "description": "The complete, universal clipboard skill for any AI agent (any provider) - read/write native app clipboard formats (Slack, Mural, Figma, Outlook) with no API keys. Lenses read, pens write.",
   "type": "module",
   "bin": {
     "cliplens": "./src/cli.js",
@@ -28,6 +28,7 @@
     "src",
     "templates",
     "examples",
+    "SKILL.md",
     "README.md",
     "LICENSE"
   ],
@@ -36,6 +37,7 @@
     "clipboard-api",
     "mcp",
     "ai-agent",
+    "agent-skill",
     "slack",
     "mural",
     "figma",

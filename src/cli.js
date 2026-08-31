@@ -72,7 +72,7 @@ switch (cmd) {
     break;
   }
   default:
-    console.log('cliplens — Clipboard Canvas Adapter');
+    console.log('cliplens — ClipLens — universal clipboard skill');
     console.log('Commands: capture, inspect, diff, formats, text');
     console.log('Use --help for details');
 }
