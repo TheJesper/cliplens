@@ -106,7 +106,7 @@ service that makes the clipboard *visible*:
 
 - **Popup toast** — when a clip is written or generated, a small transparent overlay flashes (emoji/icon,
   sound, fade) so you get confirmation without switching windows.
-- **Clip-history picker** — a **configurable** global hotkey (default `Ctrl+Shift+V`; `§`/`½` on Nordic layouts) opens the last N clips to re-paste any of them.
+- **Clip-history picker** — a **configurable** global hotkey (default `Shift+Alt+V`, cross-platform, macOS + Windows) opens the last N clips to re-paste any of them.
 
 Run it with `cliplens-daemon --watch`. Writes still work silently if it isn't running.
 

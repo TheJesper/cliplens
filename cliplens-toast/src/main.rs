@@ -4,7 +4,7 @@
 //   (default)   one-shot toast, backward compatible with cliplens-toast
 //               cliplens-daemon --emoji X --title Y --agent Z --duration N --position P
 //   --notify    send a NotifyRequest to a running daemon (JSON over local socket)
-//   --watch     run the daemon: IPC server + global hotkey (Ctrl+Shift+V) + picker
+//   --watch     run the daemon: IPC server + global hotkey (Shift+Alt+V, configurable) + picker
 //   --send-json '<json>'   low-level: send a raw Message to the daemon
 //
 // Design notes captured in the task list: the card must fill the whole window
@@ -140,6 +140,10 @@ fn run_daemon() {
     // picker". Also register Ctrl+Shift+V as a layout-independent fallback.
     let hotkey_mgr = GlobalHotKeyManager::new().expect("hotkey manager");
     let candidates = [
+        // Cross-platform default: Shift+Alt+V (Shift+Option+V on macOS) — global, and free of the
+        // Ctrl+Shift+V "paste without formatting" clash.
+        HotKey::new(Some(Modifiers::SHIFT | Modifiers::ALT), Code::KeyV),
+        // Nordic § / ½ key candidates (layout-specific) + a Ctrl+Shift+V fallback.
         HotKey::new(Some(Modifiers::CONTROL), Code::Backquote),
         HotKey::new(Some(Modifiers::CONTROL), Code::IntlBackslash),
         HotKey::new(Some(Modifiers::CONTROL), Code::Quote),
