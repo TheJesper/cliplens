@@ -1,11 +1,11 @@
+<h1 align="center">ClipLens</h1>
+
+<p align="center"><b>The universal, AI-independent skill for everything clipboard.</b><br/>
+<sub>read · write · analyze — any app, any agent, any provider · no API keys</sub></p>
+
 <p align="center">
   <img src="assets/hero.png" alt="ClipLens" width="100%">
 </p>
-
-<h1 align="center">ClipLens</h1>
-
-<p align="center"><b>The complete, universal clipboard skill for any AI agent.</b><br/>
-<sub>any provider · no API keys · lenses read, pens write</sub></p>
 
 Drop ClipLens into any agent — Claude Code, Kiro, Copilot, Gemini, Cursor, your own — and it can read and
 write the system clipboard in the *native formats real apps use*: generate a Slack message with real
