@@ -1,0 +1,69 @@
+name: Release daemon binaries
+
+# Builds the cross-platform cliplens-daemon (Rust + wry) for Windows, macOS and Linux
+# and attaches the native binaries to the GitHub Release. End users download a binary —
+# no Rust toolchain required.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin: cliplens-daemon
+            asset: cliplens-daemon-linux-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bin: cliplens-daemon
+            asset: cliplens-daemon-macos-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            bin: cliplens-daemon
+            asset: cliplens-daemon-macos-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: cliplens-daemon.exe
+            asset: cliplens-daemon-windows-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cliplens-toast
+
+      - name: Install Linux WebKit/GTK deps (wry)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Build
+        working-directory: cliplens-toast
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage binary
+        shell: bash
+        run: cp "cliplens-toast/target/${{ matrix.target }}/release/${{ matrix.bin }}" "${{ matrix.asset }}"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}
