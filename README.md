@@ -1,6 +1,10 @@
-# ClipLens 🔍
+<p align="center">
+  <img src="assets/hero.svg" alt="ClipLens — the clipboard is the API" width="100%">
+</p>
 
-**The clipboard is the API.**
+<h1 align="center">ClipLens</h1>
+
+<p align="center"><b>The clipboard is the API.</b></p>
 
 ClipLens reads and writes the system clipboard in the *native formats real apps use* — so an AI agent or a
 CLI can generate a Slack message with real bold/links, a Mural sticky note, an Outlook-ready HTML email, or
@@ -13,12 +17,12 @@ speaks it. ClipLens turns that into a universal adapter layer.
 
 ---
 
-## The idea: Lenses & Pens
+## <img src="assets/icons/magnifier.png" width="32" height="32"> The idea: Lenses &amp; Pens
 
 | | Direction | What it does |
 |---|---|---|
-| 🔍 **Lens** | READ | Decodes a clipboard payload (Mural `mly://`, Figma, Slack Quill Delta, console dumps) into clean, structured, token-friendly data. |
-| ✍️ **Pen** | WRITE | Encodes structured input into a real app's clipboard format (Slack rich text, Outlook HTML, Mural widgets, images). |
+| <img src="assets/icons/magnifier.png" width="20" height="20"> **Lens** | READ | Decodes a clipboard payload (Mural `mly://`, Figma, Slack Quill Delta, console dumps) into clean, structured, token-friendly data. |
+| <img src="assets/icons/pencil.png" width="20" height="20"> **Pen** | WRITE | Encodes structured input into a real app's clipboard format (Slack rich text, Outlook HTML, Mural widgets, images). |
 
 You paste. The app thinks a human did it.
 
@@ -31,7 +35,7 @@ ClipLens  ──►  Lens (read)  ──►  structured data for your agent
 native clipboard format  ──►  Ctrl+V into Slack / Mural / Outlook / …
 ```
 
-## Proven adapters
+## <img src="assets/icons/plugin.png" width="32" height="32"> Proven adapters
 
 | App | Lens (read) | Pen (write) | Format |
 |-----|:-----------:|:-----------:|--------|
@@ -41,7 +45,7 @@ native clipboard format  ──►  Ctrl+V into Slack / Mural / Outlook / …
 | **Outlook / Teams / Docs** | | ✅ | HTML-Format clipboard |
 | **DevTools console** | ✅ 99%+ noise reduction | | plain text |
 
-## Install
+## <img src="assets/icons/package.png" width="32" height="32"> Install
 
 ```bash
 git clone https://github.com/TheJesper/cliplens
@@ -50,18 +54,18 @@ npm install
 npm link          # global CLI aliases
 ```
 
-## CLI
+## <img src="assets/icons/application_osx_terminal.png" width="32" height="32"> CLI
 
 | Command | What |
 |---------|------|
-| `cliplens capture / inspect / diff` | Capture & explore raw clipboard formats |
+| `cliplens capture / inspect / diff` | Capture &amp; explore raw clipboard formats |
 | `clipit` | Markdown → Slack rich text on the clipboard |
 | `clipmail` | Markdown → HTML (Outlook / Teams / Docs) |
 | `clipconsole` | Read a pasted DevTools console dump, strip the noise (keep CORS / HTTP / `net::ERR_`) |
 | `clipmural` | Write native Mural stickies / diagrams |
 | `reclip` | Replay clipboard history |
 
-## MCP server (agents)
+## <img src="assets/icons/connect.png" width="32" height="32"> MCP server (agents)
 
 ClipLens ships an MCP server so agents (Claude Code, Kiro, …) can read/write the clipboard as tools.
 
@@ -77,10 +81,10 @@ Tools: `cliplens_analyze` · `_text` · `_capture` · `_formats` · `_inspect` �
 · `_write_plaintext` · `_lens`. Generated text runs through `humanize()` (strips em-dashes, curly quotes,
 zero-width spaces, BOM — the tells that a machine wrote it).
 
-## Private adapters (keep company stuff out of the public repo)
+## <img src="assets/icons/lock.png" width="32" height="32"> Private adapters (keep company stuff out of the public repo)
 
-ClipLens ships **only generic, public** lenses & pens. Anything org-specific — an internal tool's format, a
-proprietary board, a company log filter — goes in **gitignored** folders so it can never leak upstream:
+ClipLens ships **only generic, public** lenses &amp; pens. Anything org-specific — an internal tool's format,
+a proprietary board, a company log filter — goes in **gitignored** folders so it can never leak upstream:
 
 ```
 private-lenses/   ← your read adapters   (gitignored)
@@ -90,7 +94,7 @@ private-pens/     ← your write adapters  (gitignored)
 Drop a `.js` file exporting the lens/pen shape (see [`examples/`](examples/)); it's auto-discovered by
 `src/private.js`. Nothing in those folders is ever committed. Fork the *core* freely; keep your *adapters* private.
 
-## Platform
+## <img src="assets/icons/computer.png" width="32" height="32"> Platform
 
 **Windows-first.** Clipboard I/O currently uses PowerShell + `System.Windows.Forms`. The encoding/decoding
 logic is pure, cross-platform Node — only the small read/write shim needs porting.
@@ -98,17 +102,20 @@ logic is pure, cross-platform Node — only the small read/write shim needs port
 > Developed on [Kiro](https://kiro.dev); works with Claude Code and any MCP agent.
 > **Not yet validated on macOS or Linux** — if you're there, a clipboard shim PR would be hugely welcome. 🙏
 
-## Roadmap — *being worked on as we speak*
+## <img src="assets/icons/rocket.png" width="32" height="32"> Roadmap — *being worked on as we speak*
 
-- 🖥️ **Tray app** (`cliplens-toast/`, Rust) — native toast notifications + clipboard history overlay
-- 🍎🐧 macOS / Linux clipboard shims
-- More lenses & pens (Notion, Miro, Confluence…)
+- **Tray app** (`cliplens-toast/`, Rust) — native toast notifications + clipboard history overlay
+- macOS / Linux clipboard shims
+- More lenses &amp; pens (Notion, Miro, Confluence…)
 
-## Contributing
+## <img src="assets/icons/group.png" width="32" height="32"> Contributing
 
 You *can* fork — but I'd genuinely rather build this **with** you. Open an issue or a PR and I'll happily
 review it. See [CONTRIBUTING.md](CONTRIBUTING.md). This is open source (MIT) and meant to stay that way.
 
-## License
+## <img src="assets/icons/license_key.png" width="32" height="32"> License &amp; credits
 
 [MIT](LICENSE) © Jesper Wilfing
+
+Icons: [FatCow Farm-Fresh Web Icons](https://www.fatcow.com/free-icons) — licensed under
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
