@@ -1,0 +1,153 @@
+{
+  "_doc": "Mural widget catalog captured empirically from a real board (see SPEC-mural-format.md). Used by the mural pen to synthesize valid mly:// widgets. `commonProperties` are merged into every widget's properties; per-type `properties` override/extend. Placeholders: {{OWNER}}=current user id, {{TS}}=ms timestamp, {{ID}}=unique widget id. Geometry defaults in `size`.",
+
+  "envelope": {
+    "isAleActivated": false,
+    "isTemplate": false,
+    "labels": [],
+    "tags": [],
+    "zone": "eu"
+  },
+
+  "commonWidget": {
+    "invisible": false,
+    "rotation": 0,
+    "owner": "{{OWNER}}"
+  },
+
+  "commonProperties": {
+    "appMetadataUpdatedAt": null,
+    "createdAt": "{{TS}}",
+    "hidden": false,
+    "hideEditor": false,
+    "hideOwner": false,
+    "instruction": "",
+    "lastContentEdited": "{{TS}}",
+    "lastContentEditedBy": "{{OWNER}}",
+    "lastUpdate": "{{TS}}",
+    "lastUpdateBy": "{{OWNER}}",
+    "lastUpdateWithAI": null,
+    "lastUpdateWithAIBy": null,
+    "locked": false,
+    "lockedByFacilitator": false,
+    "parentId": null,
+    "partOf": null,
+    "presentationIndex": -1,
+    "title": "",
+    "withAI": null
+  },
+
+  "types": {
+    "sticky": {
+      "widgetType": "murally.widget.TextWidget",
+      "size": { "width": 168, "height": 168 },
+      "properties": {
+        "fontFamily": "proxima-nova",
+        "textAlign": "center",
+        "fontSize": 28,
+        "minLines": 5,
+        "backgroundColor": "#fcf281",
+        "textType": "realNote",
+        "bold": false,
+        "italic": false,
+        "strike": false,
+        "underline": false,
+        "text": "",
+        "link": null,
+        "border": false,
+        "htmlText": "<html v=\"1\"><div><br></div></html>",
+        "labels": [],
+        "round": false,
+        "verticalAlign": "middle"
+      },
+      "colors": {
+        "yellow": "#fcf281",
+        "orange": "#ff9d48",
+        "khaki": "#d9d28a",
+        "green": "#a6e5a6",
+        "teal": "#8fe0d8",
+        "blue": "#9cc7f5",
+        "violet": "#c9b6f0",
+        "pink": "#f0aee0",
+        "coral": "#f5a89c",
+        "white": "#ffffff",
+        "gray": "#d0d0d0",
+        "black": "#3a3a3a"
+      }
+    },
+
+    "text": {
+      "widgetType": "murally.widget.TextWidget",
+      "size": { "width": 200, "height": 60 },
+      "properties": {
+        "fontFamily": "proxima-nova",
+        "textAlign": "left",
+        "fontSize": 24,
+        "minLines": 1,
+        "backgroundColor": "#00000000",
+        "textType": "text",
+        "bold": false,
+        "italic": false,
+        "strike": false,
+        "underline": false,
+        "text": "",
+        "link": null,
+        "border": false,
+        "htmlText": "<html v=\"1\"><div><br></div></html>",
+        "labels": [],
+        "round": false,
+        "verticalAlign": "top"
+      }
+    },
+
+    "shape": {
+      "widgetType": "murally.widget.ShapeWidget",
+      "size": { "width": 168, "height": 168 },
+      "properties": {
+        "fontFamily": "proxima-nova",
+        "textAlign": "center",
+        "fontSize": 23,
+        "color": "#000000",
+        "bold": false,
+        "italic": false,
+        "strike": false,
+        "underline": false,
+        "text": "",
+        "background": "#FFFFFF",
+        "htmlText": "<html v=\"1\"><div><br></div></html>",
+        "shapeType": "rectangle",
+        "strokeSize": 4,
+        "strokeColor": "#1F1F1F",
+        "strokeStyle": "solid",
+        "verticalAlign": "middle"
+      },
+      "shapeTypes": [
+        "rectangle", "rounded_square", "ellipse", "triangle_smart",
+        "right_triangle_smart", "rhombus_smart", "pentagon_smart", "hexagon_smart",
+        "octagon_smart", "teardrop_smart", "cross", "database", "line"
+      ],
+      "_shapeTypesNote": "Verified real values from live board: rectangle, rounded_square, ellipse(oval), rhombus_smart(diamond), pentagon_smart, hexagon_smart, cross, database. Others (triangle/right_triangle/octagon/teardrop) follow the _smart suffix pattern but should be verified before relying on them."
+    },
+
+    "arrow": {
+      "widgetType": "murally.widget.arrow",
+      "size": { "width": 200, "height": 0 },
+      "properties": {
+        "arrowType": 1,
+        "endRefId": null,
+        "endTipType": "arrow-solid",
+        "points": [ { "x": 0, "y": 0 }, { "x": 200, "y": 0 } ],
+        "stackable": true,
+        "startRefId": null,
+        "startTipType": "none",
+        "strategy": { "reattached": { "end": false, "start": false }, "type": "straight" },
+        "strokeColor": "#7a7a7a",
+        "strokeStyle": "solid",
+        "strokeWidth": 2,
+        "tip": 1
+      },
+      "tipTypes": ["none", "arrow-solid", "arrow-line", "circle", "diamond"],
+      "strategyTypes": ["straight", "curved", "orthogonal", "bezier"]
+    }
+  }
+}

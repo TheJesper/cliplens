@@ -1,0 +1,17 @@
+{
+  "templates": {
+    "pi-jira-note": {
+      "description": "PI planning sticky with Jira link, summary, and story points",
+      "size": "247x247",
+      "fontSize": 25,
+      "format": {
+        "line1": "JIRA_KEY (linked)",
+        "line2": "(empty line)",
+        "line3": "Summary text",
+        "line4": "(empty line)",
+        "line5": "Story points (e.g. '1-3p')"
+      },
+      "htmlTemplate": "<html v=\"1\"><div><a href=\"https://your-jira.example.com/browse/{key}\"><span>{key}</span></a></div><div><br /></div><div><span>{summary}</span></div><div><br /></div><div><span>{points}</span></div></html>"
+    }
+  }
+}

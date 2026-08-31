@@ -1,0 +1,14 @@
+{
+  "_doc": "Maps friendly icon names -> hosted Mural asset photoURLs, per board (muralId). Mural only renders PhotoWidgets whose photoURL points at an asset IT hosts. So an icon must be pasted onto a board ONCE (via the image pen), which makes Mural host it; capture the resulting photoURL here and the pen can then reference it in generated diagrams on that same board. photoURL is board-relative: /api/murals/{workspace}/{muralNum}/assets/{workspace}/{assetId}.png",
+
+  "_example": {
+    "boards": {
+      "yourworkspace.1234567890000": {
+        "database": "/api/murals/yourworkspace/1234567890000/assets/yourworkspace/0-1234567890001.png",
+        "page": "/api/murals/yourworkspace/1234567890000/assets/yourworkspace/0-1234567890002.png"
+      }
+    }
+  },
+
+  "boards": {}
+}

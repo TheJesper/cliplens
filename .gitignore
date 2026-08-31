@@ -1,0 +1,21 @@
+node_modules/
+tmp/
+tmp-*
+*.bin
+*.log
+
+# Rust build artifacts (contain local absolute paths)
+cliplens-toast/target/
+
+# Local clip history (may contain user content)
+.cliplens/
+
+# Private, org-specific adapters — NEVER committed to the public repo.
+# Company lenses/pens live here; the core stays generic. See README.
+private-lenses/
+private-pens/
+private/
+
+# OS
+.DS_Store
+Thumbs.db

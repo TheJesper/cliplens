@@ -1,0 +1,58 @@
+{
+  "name": "cliplens",
+  "version": "0.1.0",
+  "description": "The clipboard is the API — read/write native app clipboard formats (Slack, Mural, Figma, Outlook) with no API keys. Lenses read, pens write.",
+  "type": "module",
+  "bin": {
+    "cliplens": "./src/cli.js",
+    "clipit": "./src/slack-clip.js",
+    "clipmail": "./src/html-clip.js",
+    "clipconsole": "./src/console-lens.js",
+    "clipemail-read": "./src/outlook-lens.js",
+    "clipmural": "./src/pens/mural.js",
+    "clipimage": "./src/pens/image.js",
+    "reclip": "./src/reclip-cli.js"
+  },
+  "scripts": {
+    "mcp": "node src/mcp-server.js",
+    "cli": "node src/cli.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "ws": "^8.21.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src",
+    "templates",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "clipboard",
+    "clipboard-api",
+    "mcp",
+    "ai-agent",
+    "slack",
+    "mural",
+    "figma",
+    "outlook",
+    "rich-text",
+    "paste",
+    "adapter",
+    "no-api"
+  ],
+  "author": "Jesper Wilfing",
+  "license": "MIT",
+  "homepage": "https://cliplens.vs-code.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TheJesper/cliplens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TheJesper/cliplens/issues"
+  }
+}

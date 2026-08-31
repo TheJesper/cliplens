@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+/**
+ * cliplens CLI
+ * 
+ * Usage:
+ *   cliplens capture --app mural --out snapshot.json
+ *   cliplens inspect snapshot.json
+ *   cliplens diff a.json b.json
+ *   cliplens patch snapshot.json --text "New text"
+ *   cliplens write patched.json
+ */
+import { captureSnapshot, listFormats, captureText } from './clipboard.js';
+import { readFileSync, writeFileSync } from 'fs';
+
+const args = process.argv.slice(2);
+const cmd = args[0];
+const flag = (name) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : undefined; };
+
+switch (cmd) {
+  case 'capture': {
+    const app = flag('app') || 'unknown';
+    const out = flag('out') || `snapshot-${Date.now()}.json`;
+    console.log(`Capturing clipboard (app hint: ${app})...`);
+    const snapshot = await captureSnapshot(app);
+    writeFileSync(out, JSON.stringify(snapshot, null, 2));
+    console.log(`Saved ${snapshot.formats.length} formats to ${out}`);
+    for (const f of snapshot.formats) {
+      console.log(`  ${f.classification.padEnd(10)} ${f.name} (${f.sizeBytes} bytes)`);
+    }
+    break;
+  }
+  case 'inspect': {
+    const file = args[1];
+    if (!file) { console.error('Usage: cliplens inspect <file.json>'); process.exit(1); }
+    const snap = JSON.parse(readFileSync(file, 'utf-8'));
+    console.log(`Snapshot: ${snap.id} (${snap.appHint}, ${snap.capturedAt})`);
+    console.log(`Formats: ${snap.formats.length}\n`);
+    for (const f of snap.formats) {
+      console.log(`[${f.classification}] ${f.name} — ${f.sizeBytes} bytes`);
+      if (f.preview) console.log(`  ${f.preview.substring(0, 100)}`);
+      console.log('');
+    }
+    break;
+  }
+  case 'diff': {
+    const [, fileA, fileB] = args;
+    if (!fileA || !fileB) { console.error('Usage: cliplens diff <a.json> <b.json>'); process.exit(1); }
+    const a = JSON.parse(readFileSync(fileA, 'utf-8'));
+    const b = JSON.parse(readFileSync(fileB, 'utf-8'));
+    console.log(`Diffing ${a.formats.length} formats...`);
+    for (const af of a.formats) {
+      const bf = b.formats.find(f => f.name === af.name);
+      if (!bf) { console.log(`  REMOVED: ${af.name}`); continue; }
+      if (af.rawBase64 !== bf.rawBase64) {
+        console.log(`  CHANGED: ${af.name} (${af.sizeBytes} → ${bf.sizeBytes} bytes)`);
+      }
+    }
+    for (const bf of b.formats) {
+      if (!a.formats.find(f => f.name === bf.name)) console.log(`  ADDED: ${bf.name}`);
+    }
+    break;
+  }
+  case 'formats': {
+    const formats = await listFormats();
+    console.log('Current clipboard formats:');
+    for (const f of formats) console.log(`  ${f}`);
+    break;
+  }
+  case 'text': {
+    const text = await captureText();
+    console.log(text);
+    break;
+  }
+  default:
+    console.log('cliplens — Clipboard Canvas Adapter');
+    console.log('Commands: capture, inspect, diff, formats, text');
+    console.log('Use --help for details');
+}
