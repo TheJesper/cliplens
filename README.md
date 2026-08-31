@@ -15,6 +15,16 @@ read back a Figma/Mural selection — with **no API keys, no OAuth, no marketpla
 Most integrations die on auth, rate limits, and approval queues. The clipboard doesn't. Every app already
 speaks it. ClipLens turns that into a universal adapter layer.
 
+## <img src="assets/icons/wand.png" width="32" height="32"> Drive it in plain English
+
+No flags to memorize. ClipLens ships as an **agent skill** ([`SKILL.md`](SKILL.md)) — drop it into Claude
+Code or Kiro, and just *say what you want*:
+
+> *"paste this as a Slack message"* · *"read the Mural I just copied"* · *"put this table on my clipboard for Outlook"* · *"clean up this console dump"*
+
+Your agent picks the right **lens** or **pen**, writes the native format, and tells you to hit `Ctrl+V`.
+A tiny background **clip daemon** flashes a popup so you *see* it land. Prefer the CLI? That works too.
+
 ---
 
 ## <img src="assets/icons/magnifier.png" width="32" height="32"> The idea: Lenses &amp; Pens
@@ -81,6 +91,17 @@ Tools: `cliplens_analyze` · `_text` · `_capture` · `_formats` · `_inspect` �
 · `_write_plaintext` · `_lens`. Generated text runs through `humanize()` (strips em-dashes, curly quotes,
 zero-width spaces, BOM — the tells that a machine wrote it).
 
+## <img src="assets/icons/computer.png" width="32" height="32"> Clip daemon &amp; popup
+
+`cliplens-daemon` (in [`cliplens-toast/`](cliplens-toast/), Rust) is an optional lightweight background
+service that makes the clipboard *visible*:
+
+- **Popup toast** — when a clip is written or generated, a small transparent overlay flashes (emoji/icon,
+  sound, fade) so you get confirmation without switching windows.
+- **Clip-history picker** — a global hotkey (`Ctrl+§`) opens the last N clips to re-paste any of them.
+
+Run it with `cliplens-daemon --watch`. Writes still work silently if it isn't running.
+
 ## <img src="assets/icons/lock.png" width="32" height="32"> Private adapters (keep company stuff out of the public repo)
 
 ClipLens ships **only generic, public** lenses &amp; pens. Anything org-specific — an internal tool's format,
@@ -104,9 +125,9 @@ logic is pure, cross-platform Node — only the small read/write shim needs port
 
 ## <img src="assets/icons/rocket.png" width="32" height="32"> Roadmap — *being worked on as we speak*
 
-- **Tray app** (`cliplens-toast/`, Rust) — native toast notifications + clipboard history overlay
-- macOS / Linux clipboard shims
-- More lenses &amp; pens (Notion, Miro, Confluence…)
+- macOS / Linux clipboard shims (the daemon is built cross-platform; the Node clipboard bridge needs porting)
+- More lenses &amp; pens (Notion, Miro, Confluence, Jira…)
+- Multiclip ring buffer — recall the last 10 clips by timestamp
 
 ## <img src="assets/icons/group.png" width="32" height="32"> Contributing
 
