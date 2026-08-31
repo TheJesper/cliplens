@@ -42,7 +42,7 @@ auto-loaded — check `cliplens_analyze` output; don't hard-code company formats
 ## The clip daemon (popup)
 
 A lightweight background daemon (`cliplens-daemon`) shows a small transparent **popup** when a clip is
-written or generated, and offers a **clip-history picker** on a global hotkey (`Ctrl+Shift+V`). When it's running,
+written or generated, and offers a **clip-history picker** on a configurable global hotkey (default `Ctrl+Shift+V`, or the `§` key on Nordic layouts). When it's running,
 a successful write flashes a toast — so the user gets visual confirmation without switching windows. If it
 isn't running, writes still work silently.
 
