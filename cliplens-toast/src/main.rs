@@ -4,7 +4,7 @@
 //   (default)   one-shot toast, backward compatible with cliplens-toast
 //               cliplens-daemon --emoji X --title Y --agent Z --duration N --position P
 //   --notify    send a NotifyRequest to a running daemon (JSON over local socket)
-//   --watch     run the daemon: IPC server + global hotkey (Ctrl+§) + picker
+//   --watch     run the daemon: IPC server + global hotkey (Ctrl+Shift+V) + picker
 //   --send-json '<json>'   low-level: send a raw Message to the daemon
 //
 // Design notes captured in the task list: the card must fill the whole window
