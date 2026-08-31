@@ -15,7 +15,7 @@ read back a Figma/Mural selection — with **no API keys, no OAuth, no marketpla
 Most integrations die on auth, rate limits, and approval queues. The clipboard doesn't. Every app already
 speaks it. ClipLens turns that into a universal adapter layer.
 
-## <img src="assets/icons/wand.png" width="32" height="32"> Drive it in plain English
+## <img src="assets/icons/wand.png" width="32" height="32" align="middle"> Drive it in plain English
 
 No flags to memorize. ClipLens ships as an **agent skill** ([`SKILL.md`](SKILL.md)) — drop it into Claude
 Code or Kiro, and just *say what you want*:
@@ -27,7 +27,7 @@ A tiny background **clip daemon** flashes a popup so you *see* it land. Prefer t
 
 ---
 
-## <img src="assets/icons/magnifier.png" width="32" height="32"> The idea: Lenses &amp; Pens
+## <img src="assets/icons/magnifier.png" width="32" height="32" align="middle"> The idea: Lenses &amp; Pens
 
 | | Direction | What it does |
 |---|---|---|
@@ -45,17 +45,17 @@ ClipLens  ──►  Lens (read)  ──►  structured data for your agent
 native clipboard format  ──►  Ctrl+V into Slack / Mural / Outlook / …
 ```
 
-## <img src="assets/icons/plugin.png" width="32" height="32"> Proven adapters
+## <img src="assets/icons/plugin.png" width="32" height="32" align="middle"> Proven adapters
 
-| App | Lens (read) | Pen (write) | Format |
-|-----|:-----------:|:-----------:|--------|
-| **Slack** | | ✅ bold/italic/lists/links/code | Quill Delta in a Chromium custom-MIME blob |
-| **Mural** | ✅ | ✅ native stickies, diagrams | `mly://` base64 JSON in HTML clipboard |
-| **Figma** | ✅ | | selection metadata |
-| **Outlook / Teams / Docs** | | ✅ | HTML-Format clipboard |
-| **DevTools console** | ✅ 99%+ noise reduction | | plain text |
+| App | Lens<br/>(read) | Pen<br/>(write) | Format &amp; notes |
+|-----|:---:|:---:|--------|
+| **Slack** | ☐ | ✅ | Quill Delta in a Chromium custom-MIME blob — bold / italic / lists / links / code |
+| **Mural** | ✅ | ✅ | `mly://` base64 JSON in HTML clipboard — native stickies &amp; diagrams |
+| **Figma** | ✅ | ☐ | selection metadata |
+| **Outlook / Teams / Docs** | ☐ | ✅ | HTML-Format clipboard |
+| **DevTools console** | ✅ | ☐ | plain text — 99%+ noise reduction |
 
-## <img src="assets/icons/package.png" width="32" height="32"> Install
+## <img src="assets/icons/package.png" width="32" height="32" align="middle"> Install
 
 ```bash
 git clone https://github.com/TheJesper/cliplens
@@ -64,7 +64,7 @@ npm install
 npm link          # global CLI aliases
 ```
 
-## <img src="assets/icons/application_osx_terminal.png" width="32" height="32"> CLI
+## <img src="assets/icons/application_osx_terminal.png" width="32" height="32" align="middle"> CLI
 
 | Command | What |
 |---------|------|
@@ -75,7 +75,7 @@ npm link          # global CLI aliases
 | `clipmural` | Write native Mural stickies / diagrams |
 | `reclip` | Replay clipboard history |
 
-## <img src="assets/icons/connect.png" width="32" height="32"> MCP server (agents)
+## <img src="assets/icons/connect.png" width="32" height="32" align="middle"> MCP server (agents)
 
 ClipLens ships an MCP server so agents (Claude Code, Kiro, …) can read/write the clipboard as tools.
 
@@ -91,7 +91,7 @@ Tools: `cliplens_analyze` · `_text` · `_capture` · `_formats` · `_inspect` �
 · `_write_plaintext` · `_lens`. Generated text runs through `humanize()` (strips em-dashes, curly quotes,
 zero-width spaces, BOM — the tells that a machine wrote it).
 
-## <img src="assets/icons/computer.png" width="32" height="32"> Clip daemon &amp; popup
+## <img src="assets/icons/computer.png" width="32" height="32" align="middle"> Clip daemon &amp; popup
 
 `cliplens-daemon` (in [`cliplens-toast/`](cliplens-toast/), Rust) is an optional lightweight background
 service that makes the clipboard *visible*:
@@ -102,7 +102,7 @@ service that makes the clipboard *visible*:
 
 Run it with `cliplens-daemon --watch`. Writes still work silently if it isn't running.
 
-## <img src="assets/icons/lock.png" width="32" height="32"> Private adapters (keep company stuff out of the public repo)
+## <img src="assets/icons/lock.png" width="32" height="32" align="middle"> Private adapters (keep company stuff out of the public repo)
 
 ClipLens ships **only generic, public** lenses &amp; pens. Anything org-specific — an internal tool's format,
 a proprietary board, a company log filter — goes in **gitignored** folders so it can never leak upstream:
@@ -115,7 +115,7 @@ private-pens/     ← your write adapters  (gitignored)
 Drop a `.js` file exporting the lens/pen shape (see [`examples/`](examples/)); it's auto-discovered by
 `src/private.js`. Nothing in those folders is ever committed. Fork the *core* freely; keep your *adapters* private.
 
-## <img src="assets/icons/computer.png" width="32" height="32"> Platform
+## <img src="assets/icons/computer.png" width="32" height="32" align="middle"> Platform
 
 **Windows-first.** Clipboard I/O currently uses PowerShell + `System.Windows.Forms`. The encoding/decoding
 logic is pure, cross-platform Node — only the small read/write shim needs porting.
@@ -123,18 +123,18 @@ logic is pure, cross-platform Node — only the small read/write shim needs port
 > Developed on [Kiro](https://kiro.dev); works with Claude Code and any MCP agent.
 > **Not yet validated on macOS or Linux** — if you're there, a clipboard shim PR would be hugely welcome. 🙏
 
-## <img src="assets/icons/rocket.png" width="32" height="32"> Roadmap — *being worked on as we speak*
+## <img src="assets/icons/rocket.png" width="32" height="32" align="middle"> Roadmap — *being worked on as we speak*
 
 - macOS / Linux clipboard shims (the daemon is built cross-platform; the Node clipboard bridge needs porting)
 - More lenses &amp; pens (Notion, Miro, Confluence, Jira…)
 - Multiclip ring buffer — recall the last 10 clips by timestamp
 
-## <img src="assets/icons/group.png" width="32" height="32"> Contributing
+## <img src="assets/icons/group.png" width="32" height="32" align="middle"> Contributing
 
 You *can* fork — but I'd genuinely rather build this **with** you. Open an issue or a PR and I'll happily
 review it. See [CONTRIBUTING.md](CONTRIBUTING.md). This is open source (MIT) and meant to stay that way.
 
-## <img src="assets/icons/license_key.png" width="32" height="32"> License &amp; credits
+## <img src="assets/icons/license_key.png" width="32" height="32" align="middle"> License &amp; credits
 
 [MIT](LICENSE) © Jesper Wilfing
 
