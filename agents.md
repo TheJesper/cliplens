@@ -219,3 +219,21 @@ User pastes (Ctrl+V)
 - After write, tell user Ctrl+V immediately
 - Console lens: read `tmp/console-filtered.txt`, never raw clipboard
 - Notification failure must never break the clip operation
+
+## Daemon toast (cliplens-toast) — status & TODO (2026-08-31)
+
+Design tuned to Jesper's spec: **brown card** (rgba(74,54,40,0.90) + opacity), **no accent rail**,
+**FatCow icon** (embedded `src/icon_clip.b64`, pixel-perfect 32x32, no shadow, crisp), **gentle wiggle**
+(±4°, ease-in-out 2s), **sender badge** (`--agent`), **type chip** (`--type Slack|Mural|Image|Prompt|Normal|Vanilla`).
+Build: `cargo build --release` in `cliplens-toast/` (binary is gitignored → CI `.github/workflows/release.yml`
+publishes prebuilt binaries per OS). notify.js routes: daemon (if built) → native OS toast → console.
+
+**TODO (not yet done):**
+1. **reclip by id** — return a clip id when writing; `reclip <id>` re-pastes that specific clip. Needs
+   `src/history.js` (add stable id per entry) + `src/reclip-cli.js` (accept an id) + surface the id in the
+   MCP write result and in the toast.
+2. **Click-to-dismiss** — toast is deliberately click-through (`set_ignore_cursor_events`); to make it
+   clickable, disable click-through + add a webview IPC `close` handler in `main.rs`.
+3. **Smart stacking/replacement** — run the daemon in `--watch` and route notifies via IPC so new toasts
+   replace/stack and old ones fade (single persistent window coordinates them; `--id` already updates in place).
+4. **Per-type icons** — map `--type` → different FatCow icons (Slack/Mural/Image/copy/paste), currently one icon.

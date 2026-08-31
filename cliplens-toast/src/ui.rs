@@ -22,6 +22,7 @@ pub struct ToastView<'a> {
     pub title: &'a str,
     pub subtitle: &'a str,
     pub agent: &'a str,
+    pub type_label: &'a str,
     pub scale: f64,
 }
 
@@ -70,6 +71,20 @@ pub fn toast_html(v: &ToastView) -> String {
         (format!("background:{};", accent), String::new())
     };
 
+    // Clip uses the FatCow clipboard icon (embedded); other kinds keep their emoji glyph.
+    let icon_el = if kind == "clip" {
+        format!(r#"<img class="emoji {a}" src="data:image/png;base64,{ic}"/>"#, a = emoji_anim, ic = ICON_CLIP)
+    } else {
+        format!(r#"<div class="emoji {a}">{e}</div>"#, a = emoji_anim, e = emoji)
+    };
+
+    // Optional clip-type chip (Slack / Mural / Image / Prompt / Normal / Vanilla ...).
+    let chip = if v.type_label.trim().is_empty() {
+        String::new()
+    } else {
+        format!(r#"<span class="chip">{}</span>"#, esc(v.type_label))
+    };
+
     format!(
         r#"<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
 {base}
@@ -78,13 +93,15 @@ pub fn toast_html(v: &ToastView) -> String {
 .toast{{position:relative;display:flex;align-items:center;gap:calc(18px*var(--scale));
   width:100%;height:100%;box-sizing:border-box;
   padding:0 calc(30px*var(--scale)) 0 calc(28px*var(--scale));
-  background:rgba(28,28,30,0.94);border-radius:calc(22px*var(--scale));color:#F2F2F7;
+  background:rgba(74,54,40,0.90);border-radius:calc(22px*var(--scale));color:#F5EFE8;
   animation:pop 420ms cubic-bezier(0.22,1,0.36,1);}}
 .rail{{position:absolute;left:0;top:14%;bottom:14%;width:4px;border-radius:4px;{rail_style}}}
 .emoji{{font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
   font-size:calc(52px*var(--scale));line-height:1;
   filter:drop-shadow(0 0 calc(14px*var(--scale)) {accent}88);}}
-.emoji.wiggle{{animation:wiggle 1.6s ease-in-out infinite;}}
+img.emoji{{width:32px;height:32px;object-fit:contain;filter:none;image-rendering:-webkit-optimize-contrast;}}
+.chip{{display:inline-block;font-size:calc(10px*var(--scale));font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#F5EFE8;background:rgba(255,255,255,0.16);padding:1px calc(7px*var(--scale));border-radius:calc(6px*var(--scale));margin-right:calc(7px*var(--scale));vertical-align:2px;}}
+.emoji.wiggle{{animation:wiggle 2s ease-in-out infinite;}}
 .emoji.pulse{{animation:pulse 1.3s ease-in-out infinite;}}
 .emoji.bounce{{animation:bounce 900ms cubic-bezier(0.22,1.4,0.4,1);}}
 .title{{font-size:calc(21px*var(--scale));font-weight:600;line-height:1.15;}}
@@ -98,9 +115,8 @@ pub fn toast_html(v: &ToastView) -> String {
   background-size:200% 100%;animation:shimmer 1.4s linear infinite;opacity:0.9;}}
 {anim}
 </style></head><body><div class="wrap"><div class="toast">
-<div class="rail"></div>
-<div class="emoji {emoji_anim}">{emoji}</div>
-<div class="text"><div class="title">{title}</div>{sub}</div>
+{icon}
+<div class="text"><div class="title">{chip}{title}</div>{sub}</div>
 {badge}
 {shimmer}
 {confetti}
@@ -110,8 +126,8 @@ pub fn toast_html(v: &ToastView) -> String {
         scale = v.scale,
         accent = accent,
         rail_style = rail_style,
-        emoji_anim = emoji_anim,
-        emoji = emoji,
+        icon = icon_el,
+        chip = chip,
         title = esc(v.title),
         sub = sub,
         badge = badge,
@@ -162,7 +178,7 @@ pub fn picker_html(entries: &[ClipEntry], selected: usize) -> String {
         r#"<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
 {base}
 .wrap{{position:fixed;inset:0;padding:14px;box-sizing:border-box;
-  background:rgba(28,28,30,0.95);border-radius:20px;color:#F2F2F7;
+  background:rgba(74,54,40,0.92);border-radius:20px;color:#F5EFE8;
   animation:pop 260ms cubic-bezier(0.22,1,0.36,1);}}
 .head{{display:flex;align-items:center;gap:10px;margin:2px 6px 12px;}}
 .head .e{{font-family:"Segoe UI Emoji","Apple Color Emoji",sans-serif;font-size:22px;}}
@@ -188,12 +204,13 @@ pub fn picker_html(entries: &[ClipEntry], selected: usize) -> String {
     )
 }
 
+const ICON_CLIP: &str = include_str!("icon_clip.b64");
 const BASE_CSS: &str = r#"html,body{margin:0;padding:0;height:100%;width:100%;background:transparent;overflow:hidden;
 font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif;user-select:none;cursor:default;}
 .text{display:flex;flex-direction:column;}"#;
 
 const ANIM_CSS: &str = r#"@keyframes pop{0%{opacity:0;transform:scale(0.97);}100%{opacity:1;transform:scale(1);}}
-@keyframes wiggle{0%,100%{transform:rotate(0) scale(1);}25%{transform:rotate(-7deg) scale(1.05);}75%{transform:rotate(7deg) scale(1.05);}}
+@keyframes wiggle{0%,100%{transform:rotate(0) scale(1);}25%{transform:rotate(-4deg) scale(1.03);}75%{transform:rotate(4deg) scale(1.03);}}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:0.85;}50%{transform:scale(1.12);opacity:1;}}
 @keyframes bounce{0%{transform:translateY(-40%) scale(0.6);opacity:0;}55%{transform:translateY(8%) scale(1.15);opacity:1;}100%{transform:translateY(0) scale(1);}}
 @keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}

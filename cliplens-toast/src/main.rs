@@ -77,6 +77,7 @@ fn parse_notify_args(argv: &[String]) -> NotifyRequest {
             "--duration" => req.duration = val.parse().unwrap_or(2600),
             "--kind" => req.kind = val,
             "--accent" => req.accent = val,
+            "--type" | "--format" => req.format = val,
             "--id" => req.id = val,
             "--size" => req.size = val,
             "--width" => req.width = val.parse().unwrap_or(0.0),
@@ -317,6 +318,7 @@ fn render_request(req: &NotifyRequest) -> (Resolved, f64, f64, f64, String) {
         title,
         subtitle: &req.subtitle,
         agent: &req.agent,
+        type_label: &req.format,
         scale,
     };
     let html = ui::toast_html(&view);

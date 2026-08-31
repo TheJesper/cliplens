@@ -184,7 +184,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "clipster-daemon"
+name = "cliplens-daemon"
 version = "0.2.0"
 dependencies = [
  "arboard",

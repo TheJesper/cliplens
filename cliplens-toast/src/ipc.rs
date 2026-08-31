@@ -31,6 +31,9 @@ pub struct NotifyRequest {
     /// Accent hex override (e.g. "#30D158"); empty => derive from kind.
     #[serde(default)]
     pub accent: String,
+    /// Clip type/format label shown as a chip (e.g. "Slack", "Mural", "Image", "Prompt", "Normal").
+    #[serde(default)]
+    pub format: String,
     /// Stable id for in-place update; empty => always a new card.
     #[serde(default)]
     pub id: String,
@@ -75,6 +78,7 @@ impl Default for NotifyRequest {
             position: default_position(),
             kind: String::new(),
             accent: String::new(),
+            format: String::new(),
             id: String::new(),
             agent: String::new(),
             size: String::new(),

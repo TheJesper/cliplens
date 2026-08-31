@@ -101,14 +101,26 @@ zero-width spaces, BOM — the tells that a machine wrote it).
 
 ## <img src="assets/icons/computer.png" width="32" height="32" align="middle"> Clip daemon &amp; popup
 
-`cliplens-daemon` (in [`cliplens-toast/`](cliplens-toast/), Rust) is an optional lightweight background
-service that makes the clipboard *visible*:
+`cliplens-daemon` (in [`cliplens-toast/`](cliplens-toast/), **cross-platform Rust** via wry) is an optional
+lightweight background service that makes the clipboard *visible*:
 
-- **Popup toast** — when a clip is written or generated, a small transparent overlay flashes (emoji/icon,
-  sound, fade) so you get confirmation without switching windows.
-- **Clip-history picker** — a **configurable** global hotkey (default `Shift+Alt+V`, cross-platform, macOS + Windows) opens the last N clips to re-paste any of them.
+- **Popup toast** — when a clip is written, a warm rounded overlay flashes with a pixel-perfect icon, the
+  clip **type** as a chip (`Slack` · `Mural` · `Image` · `Prompt` · `Normal`…) and the **sender** (which
+  agent made it) as a badge — so you get confirmation without switching windows.
+- **Clip-history picker** — a **configurable** global hotkey (default `Shift+Alt+V`, cross-platform,
+  macOS + Windows) opens the last N clips to re-paste any of them.
 
-Run it with `cliplens-daemon --watch`. Writes still work silently if it isn't running.
+One binary, **one identical design on Windows/macOS/Linux** (HTML/CSS in the webview — no per-OS fallback).
+Fire one manually:
+
+```bash
+cliplens-daemon --notify --title "ClipLens" --subtitle "Ctrl+V" --type Slack --agent my-agent --kind clip
+cliplens-daemon --watch      # run persistently (enables the history picker)
+```
+
+**Install:** download a prebuilt binary from [Releases](https://github.com/TheJesper/cliplens/releases)
+(built by CI for every OS — **no Rust needed**), or build once with `cargo build --release` in
+`cliplens-toast/`. If the daemon isn't present, writes still work and a plain native OS toast fires instead.
 
 ## <img src="assets/icons/lock.png" width="32" height="32" align="middle"> Private adapters (keep company stuff out of the public repo)
 
