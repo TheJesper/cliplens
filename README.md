@@ -104,9 +104,11 @@ zero-width spaces, BOM — the tells that a machine wrote it).
 `cliplens-daemon` (in [`cliplens-toast/`](cliplens-toast/), **cross-platform Rust** via wry) is an optional
 lightweight background service that makes the clipboard *visible*:
 
-- **Popup toast** — when a clip is written, a warm rounded overlay flashes with a pixel-perfect icon, the
-  clip **type** as a chip (`Slack` · `Mural` · `Image` · `Prompt` · `Normal`…) and the **sender** (which
-  agent made it) as a badge — so you get confirmation without switching windows.
+- **Popup toast** — when a clip is written, a warm rounded overlay flashes with a **per-type** pixel-perfect
+  icon (Slack / Mural / Image / Prompt / clipboard), the clip **type** as a chip (`Slack` · `Mural` · `Image`
+  · `Prompt` · `Normal`…) and the **sender** (which agent made it) as a badge — so you get confirmation
+  without switching windows. **Click the card to dismiss it**; otherwise it fades on its own, and multiple
+  clips stack.
 - **Clip-history picker** — a **configurable** global hotkey (default `Shift+Alt+V`, cross-platform,
   macOS + Windows) opens the last N clips to re-paste any of them.
 

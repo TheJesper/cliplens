@@ -71,9 +71,9 @@ pub fn toast_html(v: &ToastView) -> String {
         (format!("background:{};", accent), String::new())
     };
 
-    // Clip uses the FatCow clipboard icon (embedded); other kinds keep their emoji glyph.
+    // Clip uses a FatCow icon chosen by clip type (embedded); other kinds keep their emoji glyph.
     let icon_el = if kind == "clip" {
-        format!(r#"<img class="emoji {a}" src="data:image/png;base64,{ic}"/>"#, a = emoji_anim, ic = ICON_CLIP)
+        format!(r#"<img class="emoji {a}" src="data:image/png;base64,{ic}"/>"#, a = emoji_anim, ic = icon_for(v.type_label))
     } else {
         format!(r#"<div class="emoji {a}">{e}</div>"#, a = emoji_anim, e = emoji)
     };
@@ -94,7 +94,8 @@ pub fn toast_html(v: &ToastView) -> String {
   width:100%;height:100%;box-sizing:border-box;
   padding:0 calc(30px*var(--scale)) 0 calc(28px*var(--scale));
   background:rgba(74,54,40,0.90);border-radius:calc(22px*var(--scale));color:#F5EFE8;
-  animation:pop 420ms cubic-bezier(0.22,1,0.36,1);}}
+  cursor:pointer;animation:pop 420ms cubic-bezier(0.22,1,0.36,1);}}
+.toast:active{{transform:scale(0.98);}}
 .rail{{position:absolute;left:0;top:14%;bottom:14%;width:4px;border-radius:4px;{rail_style}}}
 .emoji{{font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
   font-size:calc(52px*var(--scale));line-height:1;
@@ -114,7 +115,7 @@ img.emoji{{width:32px;height:32px;object-fit:contain;filter:none;image-rendering
   background:linear-gradient(90deg,transparent,{accent},transparent);
   background-size:200% 100%;animation:shimmer 1.4s linear infinite;opacity:0.9;}}
 {anim}
-</style></head><body><div class="wrap"><div class="toast">
+</style></head><body><div class="wrap"><div class="toast" onclick="window.ipc.postMessage('dismiss')">
 {icon}
 <div class="text"><div class="title">{chip}{title}</div>{sub}</div>
 {badge}
@@ -205,6 +206,22 @@ pub fn picker_html(entries: &[ClipEntry], selected: usize) -> String {
 }
 
 const ICON_CLIP: &str = include_str!("icon_clip.b64");
+const ICON_SLACK: &str = include_str!("icon_slack.b64");
+const ICON_MURAL: &str = include_str!("icon_mural.b64");
+const ICON_IMAGE: &str = include_str!("icon_image.b64");
+const ICON_PROMPT: &str = include_str!("icon_prompt.b64");
+
+/// Pick the embedded FatCow icon for a clip's type label (case-insensitive).
+/// Unknown / Normal / Vanilla fall back to the clipboard glyph.
+fn icon_for(type_label: &str) -> &'static str {
+    match type_label.trim().to_ascii_lowercase().as_str() {
+        "slack" => ICON_SLACK,
+        "mural" => ICON_MURAL,
+        "image" | "bild" => ICON_IMAGE,
+        "prompt" => ICON_PROMPT,
+        _ => ICON_CLIP,
+    }
+}
 const BASE_CSS: &str = r#"html,body{margin:0;padding:0;height:100%;width:100%;background:transparent;overflow:hidden;
 font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif;user-select:none;cursor:default;}
 .text{display:flex;flex-direction:column;}"#;

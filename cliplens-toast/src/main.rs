@@ -120,6 +120,8 @@ enum LoopCmd {
     ShowPicker,
     DismissPicker,
     CommitPicker,
+    /// User clicked a toast card -> dismiss that one (by its internal token).
+    DismissToast(u64),
 }
 
 fn run_daemon() {
@@ -225,6 +227,9 @@ fn run_daemon() {
     // --- window state: a queue of active toasts (kombo) + optional picker ---
     let mut active: Vec<ActiveToast> = Vec::new();
     let mut picker: Option<Picker> = None;
+    // Monotonic token per toast so a click on a card dismisses exactly that one.
+    let mut next_token: u64 = 0;
+    let toast_proxy = event_loop.create_proxy();
 
     event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(60));
@@ -247,10 +252,17 @@ fn run_daemon() {
                     }
                 }
                 if !handled {
-                    if let Some(t) = ActiveToast::spawn(target, &req, active.len()) {
+                    let token = next_token;
+                    next_token = next_token.wrapping_add(1);
+                    if let Some(t) =
+                        ActiveToast::spawn(target, &req, active.len(), token, toast_proxy.clone())
+                    {
                         active.push(t);
                     }
                 }
+            }
+            Event::UserEvent(LoopCmd::DismissToast(token)) => {
+                active.retain(|t| t.token != token);
             }
             Event::UserEvent(LoopCmd::ShowPicker) => {
                 if let Some(p) = &mut picker {
@@ -306,6 +318,7 @@ struct ActiveToast {
     start: Instant,
     duration: Duration,
     id: String,
+    token: u64,
 }
 
 /// Build the resolved view, scaled window box, and HTML for a request.
@@ -326,22 +339,28 @@ fn render_request(req: &NotifyRequest) -> (Resolved, f64, f64, f64, String) {
 }
 
 impl ActiveToast {
-    fn spawn<T: 'static>(
-        target: &tao::event_loop::EventLoopWindowTarget<T>,
+    fn spawn(
+        target: &tao::event_loop::EventLoopWindowTarget<LoopCmd>,
         req: &NotifyRequest,
         stack_index: usize,
+        token: u64,
+        proxy: tao::event_loop::EventLoopProxy<LoopCmd>,
     ) -> Option<Self> {
         let (resolved, win_w, win_h, _scale, html) = render_request(req);
-        let window = build_window(target, win_w, win_h, false)?;
+        let window = build_window(target, win_w, win_h, true)?;
         position_window(&window, &req.position, win_w, win_h, stack_index, &req.offset);
 
+        // Any IPC message from the card (its onclick) dismisses this toast.
         let webview = WebViewBuilder::new(&window)
             .with_transparent(true)
             .with_html(html)
+            .with_ipc_handler(move |_req| {
+                let _ = proxy.send_event(LoopCmd::DismissToast(token));
+            })
             .build()
             .ok()?;
 
-        let _ = window.set_ignore_cursor_events(true);
+        // Interactive (not click-through) so a click can dismiss the card.
         window.set_visible(true);
 
         Some(ActiveToast {
@@ -350,6 +369,7 @@ impl ActiveToast {
             start: Instant::now(),
             duration: Duration::from_millis(resolved.duration),
             id: req.id.clone(),
+            token,
         })
     }
 
@@ -652,15 +672,20 @@ fn show_toast_oneshot(req: NotifyRequest) {
     };
     position_window(&window, &req.position, win_w, win_h, 0, &req.offset);
 
+    // Click the card to dismiss early (ipc handler flips this flag).
+    let dismissed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let dismissed_cb = dismissed.clone();
     let _webview = WebViewBuilder::new(&window)
         .with_transparent(true)
         .with_html(html)
+        .with_ipc_handler(move |_req| {
+            dismissed_cb.store(true, std::sync::atomic::Ordering::Relaxed);
+        })
         .build();
     let _webview = match _webview {
         Ok(w) => w,
         Err(_) => return,
     };
-    let _ = window.set_ignore_cursor_events(true);
     window.set_visible(true);
 
     play_sound(&effective_sound(&req));
@@ -670,7 +695,7 @@ fn show_toast_oneshot(req: NotifyRequest) {
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(80));
         let _ = &event;
-        if start.elapsed() >= total {
+        if start.elapsed() >= total || dismissed.load(std::sync::atomic::Ordering::Relaxed) {
             *control_flow = ControlFlow::Exit;
         }
     });

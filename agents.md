@@ -228,12 +228,13 @@ Design tuned to Jesper's spec: **brown card** (rgba(74,54,40,0.90) + opacity), *
 Build: `cargo build --release` in `cliplens-toast/` (binary is gitignored → CI `.github/workflows/release.yml`
 publishes prebuilt binaries per OS). notify.js routes: daemon (if built) → native OS toast → console.
 
-**TODO (not yet done):**
-1. **reclip by id** — return a clip id when writing; `reclip <id>` re-pastes that specific clip. Needs
-   `src/history.js` (add stable id per entry) + `src/reclip-cli.js` (accept an id) + surface the id in the
-   MCP write result and in the toast.
-2. **Click-to-dismiss** — toast is deliberately click-through (`set_ignore_cursor_events`); to make it
-   clickable, disable click-through + add a webview IPC `close` handler in `main.rs`.
-3. **Smart stacking/replacement** — run the daemon in `--watch` and route notifies via IPC so new toasts
-   replace/stack and old ones fade (single persistent window coordinates them; `--id` already updates in place).
-4. **Per-type icons** — map `--type` → different FatCow icons (Slack/Mural/Image/copy/paste), currently one icon.
+**DONE:**
+1. **reclip by id** ✅ — `src/history.js` gives every entry a stable `clip_…` id and `appendHistory` returns it;
+   `src/mcp-server.js` surfaces `clipId=…` in the write result; `reclip <clip_id>` re-pastes that exact clip
+   (bare arg still = agent name).
+2. **Click-to-dismiss** ✅ — cards are interactive (no `set_ignore_cursor_events`); the card's `onclick` posts
+   an IPC message → `LoopCmd::DismissToast(token)` removes that one (one-shot mode flips an atomic flag).
+3. **Smart stacking/replacement** ✅ — `--watch` runs a persistent window that stacks active toasts
+   (per-toast token) and expires them; `--id` updates a card in place instead of stacking.
+4. **Per-type icons** ✅ — `--type` picks the embedded FatCow icon via `ui::icon_for`:
+   Slack=`comment`, Mural=`note`, Image=`picture`, Prompt=`wand`, else clipboard.
