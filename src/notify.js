@@ -55,7 +55,7 @@ export function notify({ icon, sound = true, message = 'Clip ready', agent = 'cl
       return;
     }
     if (IS_WIN) {
-      notifyWindows({ icon, sound, message });
+      notifyNativeToast('ClipLens', message);
     } else {
       // No binary and not Windows -- last resort console line.
       console.log(`clip done: ${message}`);
@@ -140,7 +140,9 @@ export function sendNotify({
   try {
     const bin = findToastBinary();
     if (!bin) {
-      if (!IS_WIN) console.log(`notify: ${title}${subtitle ? ' — ' + subtitle : ''}`);
+      // No daemon built -> reliable native Windows toast (still works everywhere on Win10/11).
+      if (IS_WIN) { notifyNativeToast(title || 'ClipLens', subtitle || (agent ? `via ${agent}` : 'Ctrl+V')); return 'oneshot'; }
+      console.log(`notify: ${title}${subtitle ? ' — ' + subtitle : ''}`);
       return 'noop';
     }
     const args = ['--notify', '--title', String(title)];
@@ -172,6 +174,36 @@ export function sendNotify({
   } catch {
     // Notification failure must never break the caller.
     return 'noop';
+  }
+}
+
+/**
+ * Reliable Windows notification via the native Windows.UI.Notifications toast (Win10/11).
+ * Zero dependencies, nothing to build — this is the dependable fallback when the daemon isn't running.
+ * Fire-and-forget; never throws to the caller.
+ */
+function notifyNativeToast(title = 'ClipLens', message = 'Clip ready') {
+  try {
+    const esc = (s) => String(s).replace(/'/g, "''");
+    const ps = `$ErrorActionPreference='SilentlyContinue'
+$null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+$t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$x = $t.GetElementsByTagName('text')
+$null = $x.Item(0).AppendChild($t.CreateTextNode('${esc(title)}'))
+$null = $x.Item(1).AppendChild($t.CreateTextNode('${esc(message)}'))
+$toast = [Windows.UI.Notifications.ToastNotification]::new($t)
+$appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)`;
+    // UTF-8 BOM so PowerShell reads emoji/Unicode correctly.
+    const psFile = join(tmpdir(), `cliplens-toast-${Date.now()}.ps1`);
+    writeFileSync(psFile, '﻿' + ps, 'utf-8');
+    const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', psFile], {
+      detached: true, stdio: 'ignore',
+    });
+    child.unref();
+    setTimeout(() => { try { unlinkSync(psFile); } catch {} }, 8000).unref?.();
+  } catch {
+    // notifications must never break the caller
   }
 }
 
