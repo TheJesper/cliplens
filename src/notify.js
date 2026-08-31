@@ -127,6 +127,7 @@ export function sendNotify({
   kind,
   emoji,
   accent,
+  format = '',
   sound = 'off',
   position,
   size,
@@ -154,6 +155,7 @@ export function sendNotify({
     push('--subtitle', subtitle);
     push('--agent', agent || process.env.CLIPLENS_AGENT);
     push('--kind', kind);
+    push('--type', format);
     push('--emoji', emoji || process.env.CLIPLENS_EMOJI);
     push('--accent', accent);
     args.push('--sound', String(sound ?? 'off'));

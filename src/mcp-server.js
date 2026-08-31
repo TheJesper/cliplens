@@ -396,7 +396,7 @@ if ($img) {
       const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
       await writeText(args.text);
       const clipId = appendHistory({ text: args.text, format: 'plain', agent });
-      sendNotify({ kind: 'clip', title: 'Text klar', subtitle: `${args.text.length} tecken`, agent });
+      sendNotify({ kind: 'clip', format: 'Normal', title: 'Text klar', subtitle: `${args.text.length} tecken`, agent });
       return { content: [{ type: 'text', text: `Written ${args.text.length} chars as PLAIN TEXT to clipboard. clipId=${clipId} (reclip with this id for the exact same clip). Note: no formatting — for Slack formatting use cliplens_write_slack.` }] };
     }
 
@@ -412,7 +412,7 @@ if ($img) {
         unlinkSync(tmpMd);
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'slack', agent });
-        sendNotify({ kind: 'clip', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent });
+        sendNotify({ kind: 'clip', format: 'Slack', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent });
         return { content: [{ type: 'text', text: `✅ Slack-formatted clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Slack.` }] };
       } catch (e) {
         unlinkSync(tmpMd);
