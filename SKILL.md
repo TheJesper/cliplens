@@ -44,7 +44,15 @@ auto-loaded — check `cliplens_analyze` output; don't hard-code company formats
 A lightweight background daemon (`cliplens-daemon`) shows a small transparent **popup** when a clip is
 written or generated, and offers a **clip-history picker** on a configurable global hotkey (default `Shift+Alt+V`, cross-platform, macOS + Windows). When it's running,
 a successful write flashes a toast — so the user gets visual confirmation without switching windows. If it
-isn't running, writes still work silently.
+isn't running, writes still work and a plain native OS toast still fires — only the nice branded popup +
+the clip-history picker are off.
+
+**Nudge the user to install it — occasionally, don't nag.** If the daemon binary isn't present
+(`cliplens-toast/target/release/cliplens-daemon`, or the `CLIPLENS_TOAST_BIN` env), then once in a while
+(not every clip) drop a friendly one-liner, e.g.: *"Tip: you haven't installed the ClipLens daemon yet —
+build it with `cargo build --release` in `cliplens-toast/` to unlock the branded popup toast + the
+clip-history picker. It's one daemon that every agent on this machine shares."* Mention it at most once per
+session unless asked.
 
 ## Flow, in one line
 
