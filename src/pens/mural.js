@@ -103,6 +103,19 @@ function toHtmlText(text) {
 }
 
 /**
+ * Build sticky/text htmlText where the FIRST line is a clickable link.
+ * Used for Jira stickies: line 1 = <a href=jiraUrl>KEY</a>, rest = plain lines.
+ */
+function toHtmlTextWithLink(text, url) {
+  const lines = String(text ?? '').split('\n');
+  const first = lines[0] ?? '';
+  const rest = lines.slice(1);
+  const head = `<div><a href="${esc(url)}">${esc(first)}</a></div>`;
+  const body = rest.map((l) => (l === '' ? '<div><br></div>' : `<div>${esc(l)}</div>`)).join('');
+  return `<html v="1">${head}${body}</html>`;
+}
+
+/**
  * Build one widget object from a spec.
  * @param {object} spec
  * @param {string} spec.kind   - "sticky" | "text" | "shape" | "arrow"
@@ -129,7 +142,10 @@ export function buildWidget(spec, ctx) {
   // Content + styling per kind.
   if (spec.text != null && (spec.kind === 'sticky' || spec.kind === 'text' || spec.kind === 'shape')) {
     properties.text = String(spec.text);
-    properties.htmlText = toHtmlText(spec.text);
+    // If a link is provided, make the first line a clickable <a href>.
+    properties.htmlText = spec.link
+      ? toHtmlTextWithLink(spec.text, spec.link)
+      : toHtmlText(spec.text);
   }
   if (spec.color) {
     if (spec.kind === 'sticky') {
