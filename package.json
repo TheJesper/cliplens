@@ -11,11 +11,14 @@
     "clipemail-read": "./src/outlook-lens.js",
     "clipmural": "./src/pens/mural.js",
     "clipimage": "./src/pens/image.js",
-    "reclip": "./src/reclip-cli.js"
+    "reclip": "./src/reclip-cli.js",
+    "clip-clear": "./src/clip-clear.js"
   },
   "scripts": {
     "mcp": "node src/mcp-server.js",
-    "cli": "node src/cli.js"
+    "cli": "node src/cli.js",
+    "lint": "node --check src/mcp-server.js && node --check src/history.js && node --check src/hints.js && node --check src/replay.js && node --check src/lenses/mural.js && node --check src/pens/mural.js && node --check src/pens/draw.js && node --check src/pens/image.js && node --check src/clip-clear.js",
+    "build": "npm run lint"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

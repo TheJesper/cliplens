@@ -27,11 +27,18 @@ import { parseMuralHtml } from './lenses/mural.js';
 import { sendNotify } from './notify.js';
 import { appendHistory, latestByAgent, getById, clearHistory } from './history.js';
 import { replay } from './replay.js';
+import { randomHint } from './hints.js';
 import { penImage } from './pens/image.js';
 import { drawDiagram } from './pens/draw.js';
 
 // Keep last capture in memory for inspect
 let lastSnapshot = null;
+
+/** Append an occasional discovery hint to a response text (25% of the time). */
+function withHint(text) {
+  const h = randomHint();
+  return h ? `${text}\n\n${h}` : text;
+}
 
 /**
  * Auto-detect clipboard source app from available formats and content.
@@ -402,7 +409,7 @@ if ($img) {
       await writeText(args.text);
       const clipId = appendHistory({ text: args.text, format: 'plain', agent });
       sendNotify({ kind: 'clip', format: 'Normal', title: 'Text klar', subtitle: `${args.text.length} tecken`, agent });
-      return { content: [{ type: 'text', text: `Written ${args.text.length} chars as PLAIN TEXT to clipboard. clipId=${clipId} (reclip with this id for the exact same clip). Note: no formatting — for Slack formatting use cliplens_write_slack.` }] };
+      return { content: [{ type: 'text', text: withHint(`Written ${args.text.length} chars as PLAIN TEXT to clipboard. clipId=${clipId} (reclip with this id for the exact same clip). Note: no formatting — for Slack formatting use cliplens_write_slack.`) }] };
     }
 
     case 'cliplens_write_slack': {
@@ -418,7 +425,7 @@ if ($img) {
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'slack', agent });
         sendNotify({ kind: 'clip', format: 'Slack', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent });
-        return { content: [{ type: 'text', text: `✅ Slack-formatted clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Slack.` }] };
+        return { content: [{ type: 'text', text: withHint(`✅ Slack-formatted clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Slack.`) }] };
       } catch (e) {
         unlinkSync(tmpMd);
         return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
@@ -596,7 +603,7 @@ if ($img) {
         const agent = a.agent || process.env.CLIPLENS_AGENT || 'cliplens';
         penImage(imagePath, { record: true, agent });
         sendNotify({ kind: 'info', emoji: '\u{1F5BC}\u{FE0F}', title: 'Bild klar', subtitle: 'Ctrl+V', agent });
-        return { content: [{ type: 'text', text: `🖼️ Image on clipboard (transparency preserved): ${imagePath}. Ctrl+V to paste (Mural/Slack/Teams/Word).` }] };
+        return { content: [{ type: 'text', text: withHint(`🖼️ Image on clipboard (transparency preserved): ${imagePath}. Ctrl+V to paste (Mural/Slack/Teams/Word).`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Image pen error: ${e.message}` }] };
       }
@@ -614,7 +621,7 @@ if ($img) {
           { owner: process.env.CLIPLENS_MURAL_OWNER || undefined, agent, record: true }
         );
         sendNotify({ kind: 'clip', emoji: '\u{1F5FA}\u{FE0F}', title: 'Diagram klart', subtitle: `${res.nodes} noder, ${res.edges} pilar • Ctrl+V`, agent });
-        return { content: [{ type: 'text', text: `🗺️ Diagram on clipboard: ${res.nodes} nodes, ${res.edges} connectors (${res.count} widgets). Ctrl+V in Mural to paste as native shapes.` }] };
+        return { content: [{ type: 'text', text: withHint(`🗺️ Diagram on clipboard: ${res.nodes} nodes, ${res.edges} connectors (${res.count} widgets). Ctrl+V in Mural to paste as native shapes.`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Draw error: ${e.message}` }] };
       }
