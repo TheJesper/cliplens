@@ -10,11 +10,30 @@ cliplens-toast/target/
 # Local clip history (may contain user content)
 .cliplens/
 
-# Private, org-specific adapters — NEVER committed to the public repo.
+# Private, org-specific adapters - NEVER committed to the public repo.
 # Company lenses/pens live here; the core stays generic. See README.
 private-lenses/
 private-pens/
 private/
+
+# Local agent notes / scratch - may reference internal work; keep out of public repo.
+# The tracked agents.md is the sanitized project knowledge base; these are private:
+AGENTS.local.md
+agents.local.md
+*.local.md
+.agent-notes/
+.notes/
+.devkit/
+.devkit.local/
+scratch/
+temp/
+
+# Captured clip payloads / board dumps - may contain company data (Jira keys, mural ids)
+*.clip
+clips/
+templates/*-mt.json
+templates/*.local.json
+mural-catalog/
 
 # OS
 .DS_Store

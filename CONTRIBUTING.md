@@ -1,35 +1,74 @@
 # Contributing to ClipLens
 
-Thanks for being here. 🙌
+Thanks for helping out. ClipLens is a **public** repo — the single most important
+rule is that no private or company-specific data ever lands in it.
 
-You **can** fork this and run — it's MIT, that's the whole point. But honestly? I'd much rather build it
-**with** you. This is a small, focused tool with a clear idea, and it gets better fastest when people bring
-real adapters and real platforms to it.
+## Golden rule: keep it generic
 
-## The easiest ways to help
+ClipLens core must stay vendor-neutral. Anything specific to a company, customer,
+or internal system belongs in a **gitignored** location, never in a tracked file.
 
-- **You're on macOS or Linux?** The clipboard I/O shim (`src/clipboard.js`, `src/notify.js`) is the only
-  Windows-specific part — everything else is pure Node. A porting PR would be gold. I'll happily review it.
-- **You wrote a lens or a pen** for an app I don't have? Send it. If it's generic (no company internals),
-  it belongs in `src/lenses/` or `src/pens/`. If it's org-specific, keep it in your own gitignored
-  `private-lenses/` / `private-pens/` — see the README.
-- **You found the clipboard format for another app?** Even just a `SPEC-*.md` documenting the wire format
-  is a real contribution — the reverse-engineering is the hard part.
-- **Bugs, rough edges, docs, naming** — all fair game. Open an issue and let's talk.
+### Never commit
 
-## How
+- Real clip payloads or board dumps (`*.clip`, `clips/`, `mural-catalog/`)
+- Company Jira keys (e.g. `ABCD-1234`), internal URLs, or internal hostnames
+- Mural workspace ids, board numbers, owner ids (`u…` hashes)
+- Real email addresses or personal data
+- Private agent notes about what you're working on
+- API keys, tokens, credentials of any kind
 
-1. Open an issue first for anything non-trivial, so we don't both build the same thing.
-2. Fork, branch, PR. Small and focused beats big and sprawling.
-3. Keep it dependency-light (right now: just `@modelcontextprotocol/sdk` + `ws`).
-4. No company-specific / proprietary formats in the public repo — that's what `private-*` folders are for.
+### Where private things go instead
 
-## Adapter shape
+| Content | Put it here (gitignored) |
+|---------|--------------------------|
+| Company-specific lenses | `private-lenses/` |
+| Company-specific pens | `private-pens/` |
+| Private agent notes | `*.local.md`, `.notes/`, `.agent-notes/` |
+| Scratch / experiments | `scratch/`, `temp/`, `tmp/` |
+| Local tooling / config | `.devkit/` |
+| Captured clips | `clips/`, `*.clip` |
+| Company templates | `templates/*-mt.json`, `templates/*.local.json` |
 
-A **lens** exports pure functions that turn a clipboard payload into structured data (read-only). A **pen**
-exports functions that turn structured input into a native clipboard format (write). See
-[`examples/`](examples/) for copy-paste starting points.
+The tracked `agents.md` is the **sanitized** project knowledge base (generic paths,
+no company data). Private working notes go in `*.local.md` instead.
 
-No CLA, no ceremony. Be kind, keep it generic, and I'll review your PR with a smile.
+## Automated push gate
 
-— Jesper
+Two git hooks scan every commit and push for company/internal markers and block
+them before they leave your machine:
+
+- `pre-commit` — runs `node tools/check-no-secrets.mjs`
+- `pre-push` — same scan again as a final gate
+
+Install the hooks (also runs automatically on `npm install` via `prepare`):
+
+```bash
+npm run install-hooks
+```
+
+Run the scan manually any time:
+
+```bash
+npm run check-secrets
+```
+
+If the scan flags something:
+
+1. Remove the data, or
+2. Move the file to a gitignored path (see table above).
+
+Overriding the gate (`git commit --no-verify` / `git push --no-verify`) is
+strongly discouraged — the whole point is to catch leaks before they're public.
+
+## Adding patterns to the gate
+
+The scanner lives in `tools/check-no-secrets.mjs`. Add new markers to the
+`PATTERNS` array. Keep patterns specific enough to avoid false positives on
+generic docs (use uppercase `WORKSPACE`/`{placeholder}` style in examples so the
+scanner lets them through).
+
+## Code style
+
+- ES modules, Node >= 18
+- Run `npm run lint` before committing (syntax-checks the core modules)
+- Match the existing style in the file you're editing

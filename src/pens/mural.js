@@ -304,7 +304,7 @@ export function buildCard(spec, ctx, refId) {
  */
 export function buildMuralPayload(specs, opts = {}) {
   const ctx = {
-    owner: opts.owner || 'u000000000000000000000000',
+    owner: opts.owner || 'anon',
     ts: Date.now(),
     stackingOrder: 1,
   };

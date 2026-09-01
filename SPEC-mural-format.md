@@ -17,7 +17,7 @@ A real Mural copy writes **8 formats**. The one that matters:
   in the `mly://` base64 blob.
 
 The source URL confirms Mural, e.g.
-`https://app.mural.co/t/{workspace}/m/{workspace}/{muralNum}/{hash}`.
+`https://app.mural.co/t/WORKSPACE/m/WORKSPACE/MURALNUM/HASH`.
 
 ## The `mly://` payload
 
@@ -25,11 +25,11 @@ The source URL confirms Mural, e.g.
 
 ```jsonc
 {
-  "canvasLink": "https://app.mural.co/t/.../m/.../.../<hash>",
+  "canvasLink": "https://app.mural.co/t/WORKSPACE/m/WORKSPACE/MURALNUM/HASH",
   "isAleActivated": false,
   "isTemplate": false,
   "labels": [],
-  "muralId": "vgcs0959.1787916905066",   // "{workspace}.{muralNumber}"
+  "muralId": "workspace123.1234567890000",   // "{workspace}.{muralNumber}"
   "tags": [],
   "zone": "eu",                           // deployment zone
   "widgets": [ /* array of widget objects */ ]
@@ -48,7 +48,7 @@ Every widget has these top-level keys:
   "width": 40, "height": 114,
   "rotation": 0,
   "invisible": false,
-  "owner": "u354c7dd9116c6a30ee0d0350",
+  "owner": "uXXXXXXXXXXXXXXXXXXXXXXXX",
   "stackingOrder": 29,
   "properties": { /* common + type-specific */ }
 }
@@ -80,7 +80,7 @@ thumbURL
 ```
 
 - `photoURL`: server-relative, e.g.
-  `/api/murals/vgcs0959/1787916905066/assets/vgcs0959/0-1788106115853.png`
+  `/api/murals/{workspace}/{muralNumber}/assets/{workspace}/0-1234567890000.png`
   -> images are Mural-hosted assets; pasting a NEW image needs an upload, not
   just a URL we invent.
 

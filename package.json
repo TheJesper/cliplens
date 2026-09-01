@@ -18,6 +18,9 @@
     "mcp": "node src/mcp-server.js",
     "cli": "node src/cli.js",
     "lint": "node --check src/mcp-server.js && node --check src/history.js && node --check src/hints.js && node --check src/replay.js && node --check src/lenses/mural.js && node --check src/pens/mural.js && node --check src/pens/draw.js && node --check src/pens/image.js && node --check src/clip-clear.js",
+    "check-secrets": "node tools/check-no-secrets.mjs",
+    "install-hooks": "node tools/install-hooks.mjs",
+    "prepare": "node tools/install-hooks.mjs",
     "build": "npm run lint"
   },
   "dependencies": {
@@ -52,7 +55,7 @@
   ],
   "author": "Jesper Wilfing",
   "license": "MIT",
-  "homepage": "https://cliplens.vs-code.com",
+  "homepage": "https://github.com/TheJesper/cliplens#readme",
   "repository": {
     "type": "git",
     "url": "https://github.com/TheJesper/cliplens.git"
