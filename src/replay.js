@@ -46,10 +46,16 @@ export async function replay(entry) {
         return { ok: true, format: fmt, detail: 'Mural sticky' };
       }
       case 'mural-widgets': {
-        // entry.text is a JSON array of widget specs from penWidgets/drawDiagram.
-        const specs = JSON.parse(entry.text || '[]');
+        // entry.text is JSON. New format: {specs, owner, muralId, zone, canvasLink}.
+        // Old format (backward-compat): a bare specs array.
+        const parsed = JSON.parse(entry.text || '[]');
+        const isNew = parsed && !Array.isArray(parsed) && Array.isArray(parsed.specs);
+        const specs = isNew ? parsed.specs : parsed;
+        const opts = isNew
+          ? { owner: parsed.owner, muralId: parsed.muralId, zone: parsed.zone, canvasLink: parsed.canvasLink, record: false }
+          : { record: false };
         const { penWidgets } = await import('./pens/mural.js');
-        penWidgets(specs, { record: false });
+        penWidgets(specs, opts);
         return { ok: true, format: fmt, detail: `${specs.length} Mural widget(s)` };
       }
       case 'image': {

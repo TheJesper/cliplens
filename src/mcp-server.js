@@ -25,7 +25,7 @@ import { captureSnapshot, captureText, listFormats, captureFormat, writeText } f
 import { parseFigmaText } from './lenses/figma.js';
 import { parseMuralHtml } from './lenses/mural.js';
 import { sendNotify } from './notify.js';
-import { appendHistory, latestByAgent, getById } from './history.js';
+import { appendHistory, latestByAgent, getById, clearHistory } from './history.js';
 import { replay } from './replay.js';
 import { penImage } from './pens/image.js';
 import { drawDiagram } from './pens/draw.js';
@@ -236,6 +236,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           agent: { type: 'string', description: "Fallback when no id: re-clip this sender's latest clip. Omit for most recent overall." },
         },
       },
+    },
+    {
+      name: 'cliplens_clear',
+      description: "Wipe ALL saved clip history from disk (the /clip clear or /cl command). Use when the user says 'clear clips', 'wipe history', '/clip clear', or wants to remove anything sensitive that was cached. Clip history is opt-in (off by default) and auto-expires after ~1h, but this clears it immediately.",
+      inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'cliplens_pen_image',
@@ -557,6 +562,11 @@ if ($img) {
       const who = entry.agent || 'unknown';
       sendNotify({ kind: 'clip', title: 'Re-clippad', subtitle: `${res.format} • Ctrl+V`, agent: who });
       return { content: [{ type: 'text', text: `♻️ Re-clipped ${res.format} [${entry.id}] — ${res.detail}. Ctrl+V now.` }] };
+    }
+
+    case 'cliplens_clear': {
+      const n = clearHistory();
+      return { content: [{ type: 'text', text: `🧹 Cleared clip history — ${n} clip(s) removed from disk.` }] };
     }
 
     case 'cliplens_pen_image': {

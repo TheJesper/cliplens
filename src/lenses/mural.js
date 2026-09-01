@@ -63,9 +63,18 @@ export function parseMuralHtml(html) {
     if (fill && fill !== 'rgba(255,255,255,0)' && fill !== '#00000000') short.fill = fill;
     if (p.color) short.textColor = p.color;
     if (p.strokeColor && w.type !== 'murally.widget.arrow') short.stroke = p.strokeColor;
-    // Any text-bearing widget: prefer text, then htmlText, then title.
-    const content = stripHtml(p.text) || stripHtml(p.htmlText) || stripHtml(p.title);
+    // Rich content: prefer htmlText (carries links + formatting), fall back to text/title.
+    const rich = firstNonEmpty(p.htmlText, p.text, p.title);
+    const content = stripHtml(rich);
     if (content) short.text = content;
+    // Links: extract every <a href> so Jira/URLs on a sticky survive the lens.
+    const links = extractLinks(rich) || extractLinks(p.text) || extractLinks(p.title);
+    if (links && links.length) short.links = links;
+    // Inline formatting flags (bold/italic/underline/strike) if present.
+    const fmt = detectFormatting(rich, p);
+    if (fmt.length) short.formatting = fmt;
+    // Keep the raw rich HTML too, so a pen can round-trip formatting verbatim.
+    if (rich && /<(a|b|strong|i|em|u|s|span)[ >]/i.test(rich)) short.html = rich;
     return short;
   });
 
@@ -93,6 +102,9 @@ export function parseMuralHtml(html) {
     .filter((i) => i.type === 'arrow' && (i.from || i.to))
     .map((i) => ({ from: i.from, to: i.to }));
 
+  // All links across the selection, flattened (for quick "what URLs are here").
+  const links = items.flatMap((i) => (i.links || []).map((l) => ({ widget: i.id, ...l })));
+
   return {
     type: 'mural-clipboard',
     ok: true,
@@ -103,9 +115,45 @@ export function parseMuralHtml(html) {
     widgetTypes: byType,
     bbox,
     texts,
+    links,
     connections,
     widgets: items,
   };
+}
+
+/** First argument that is a non-empty string. */
+function firstNonEmpty(...vals) {
+  for (const v of vals) if (typeof v === 'string' && v.trim() !== '') return v;
+  return '';
+}
+
+/**
+ * Extract hyperlinks from an HTML string: [{ text, href }].
+ * Mural stickies carry Jira/URLs as <a href="...">label</a> inside htmlText.
+ */
+function extractLinks(html) {
+  if (!html || typeof html !== 'string') return [];
+  const out = [];
+  const re = /<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/a>/gis;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    out.push({ text: stripHtml(m[2]) || m[1], href: m[1] });
+  }
+  // Also catch bare URLs not wrapped in <a> (best effort).
+  const bare = stripHtml(html).match(/\bhttps?:\/\/[^\s)]+/g);
+  if (bare) for (const u of bare) if (!out.some((l) => l.href === u)) out.push({ text: u, href: u });
+  return out;
+}
+
+/** Detect inline formatting present in the rich HTML. */
+function detectFormatting(html, p) {
+  const flags = new Set();
+  const h = String(html || '');
+  if (/<(b|strong)\b/i.test(h) || p?.bold) flags.add('bold');
+  if (/<(i|em)\b/i.test(h) || p?.italic) flags.add('italic');
+  if (/<u\b/i.test(h) || p?.underline) flags.add('underline');
+  if (/<(s|strike|del)\b/i.test(h) || p?.strike) flags.add('strike');
+  return [...flags];
 }
 
 /** Strip HTML tags/entities to plain text. */

@@ -326,15 +326,24 @@ export function buildMuralPayload(specs, opts = {}) {
 export function penWidgets(specs, opts = {}) {
   const { cfHtml } = buildMuralPayload(specs, opts);
   writeHtmlClipboard(cfHtml);
+  let clipId = null;
   if (opts.record !== false) {
-    appendHistory({
+    clipId = appendHistory({
       format: 'mural-widgets',
-      text: JSON.stringify(specs),
+      // Store specs AND the board context so reclip can rebuild the exact same
+      // paste — without owner/muralId/zone Mural renders empty holders.
+      text: JSON.stringify({
+        specs,
+        owner: opts.owner,
+        muralId: opts.muralId,
+        zone: opts.zone,
+        canvasLink: opts.canvasLink,
+      }),
       title: `🧩 Mural: ${specs.length} widget(s)`,
       agent: opts.agent || process.env.CLIPLENS_AGENT || 'cliplens',
     });
   }
-  return { count: specs.length, bytes: Buffer.byteLength(cfHtml, 'utf-8') };
+  return { count: specs.length, bytes: Buffer.byteLength(cfHtml, 'utf-8'), clipId };
 }
 
 /**
