@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * html-clip: Format markdown text as rich HTML and write to clipboard.
- * Works with: Outlook, Teams, Google Docs, Notion, Word — anything that reads HTML paste.
+ * Works with: Outlook, Teams, Google Docs, Notion, Word -- anything that reads HTML paste.
  *
  * Usage:
  *   clipmail --file message.md
@@ -13,21 +13,42 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { notify } from './notify.js';
 
-/** Simple markdown → HTML converter */
+/** Simple markdown -> HTML converter */
 function markdownToHtml(text) {
   let html = text;
 
-  // Code blocks (``` fenced)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
-    `<pre style="background:#f4f4f4;padding:12px;border-radius:4px;font-family:Consolas,monospace;font-size:13px;overflow-x:auto"><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`
-  );
+  // Code blocks (``` fenced) -> stash as placeholders so the per-line loop can't split them
+  const blocks = [];
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const safe = code
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\s+$/, '');
+    blocks.push(
+      `<pre style="background:#f4f4f4;padding:12px;border-radius:4px;font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap;overflow-x:auto"><code>${safe}</code></pre>`
+    );
+    return `\u0000BLOCK${blocks.length - 1}\u0000`;
+  });
 
-  // Process line by line for lists
   const lines = html.split('\n');
   let result = [];
   let inList = null; // 'ul' or 'ol'
 
   for (const line of lines) {
+    // Restored code block -> emit as-is, never wrap in <p>
+    const bm = line.match(/^\u0000BLOCK(\d+)\u0000$/);
+    if (bm) {
+      if (inList) { result.push(`</${inList}>`); inList = null; }
+      result.push(blocks[Number(bm[1])]);
+      continue;
+    }
+    // Blockquote
+    if (/^>\s?/.test(line)) {
+      if (inList) { result.push(`</${inList}>`); inList = null; }
+      result.push(
+        `<blockquote style="border-left:3px solid #ccc;margin:0 0 4px;padding:2px 10px;color:#555">${processInline(line.replace(/^>\s?/, ''))}</blockquote>`
+      );
+      continue;
+    }
     // Bullet list
     if (/^[-•]\s/.test(line)) {
       if (inList !== 'ul') { if (inList) result.push(`</${inList}>`); result.push('<ul>'); inList = 'ul'; }
@@ -68,23 +89,25 @@ function processInline(text) {
   return text;
 }
 
-/** Build Windows "HTML Format" clipboard payload */
+/** Build Windows "HTML Format" clipboard payload. Offsets are BYTE offsets (UTF-8). */
 function buildHtmlFormat(html) {
+  const enc = new TextEncoder();
   const preamble = `Version:0.9\r\nStartHTML:SSSSSSSSSS\r\nEndHTML:EEEEEEEEEE\r\nStartFragment:FFFFFFFFFF\r\nEndFragment:GGGGGGGGGG\r\n`;
   const prefix = `<html><body><!--StartFragment-->`;
   const suffix = `<!--EndFragment--></body></html>`;
-  const full = preamble + prefix + html + suffix;
 
-  const startHtml = preamble.length;
-  const startFragment = startHtml + prefix.length;
-  const endFragment = startFragment + html.length;
-  const endHtml = endFragment + suffix.length;
+  const startHtml = enc.encode(preamble).length;
+  const startFragment = startHtml + enc.encode(prefix).length;
+  const endFragment = startFragment + enc.encode(html).length;
+  const endHtml = endFragment + enc.encode(suffix).length;
 
-  return full
+  const filled = preamble
     .replace('SSSSSSSSSS', String(startHtml).padStart(10, '0'))
     .replace('EEEEEEEEEE', String(endHtml).padStart(10, '0'))
     .replace('FFFFFFFFFF', String(startFragment).padStart(10, '0'))
     .replace('GGGGGGGGGG', String(endFragment).padStart(10, '0'));
+
+  return filled + prefix + html + suffix;
 }
 
 // Get input
@@ -106,9 +129,9 @@ if (!text?.trim()) {
   process.exit(1);
 }
 
-// Sanitize AI-isms
+// Sanitize AI-isms (keep emojis + native chars intact)
 text = text
-  .replace(/—/g, '-').replace(/–/g, '-')
+  .replace(/\u2014/g, '-').replace(/\u2013/g, '-')
   .replace(/\u201C/g, '"').replace(/\u201D/g, '"')
   .replace(/\u2018/g, "'").replace(/\u2019/g, "'")
   .replace(/\u2026/g, '...').replace(/\u00A0/g, ' ')
@@ -116,18 +139,20 @@ text = text
 
 const html = markdownToHtml(text);
 const htmlFormat = buildHtmlFormat(html);
-const plainText = text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/_/g, '').replace(/`/g, '').replace(/\[(.+?)\]\(.+?\)/g, '$1');
+const plainText = text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/_/g, '').replace(/`/g, '').replace(/\[(.+?)\]\(.+?\)/g, '$1').replace(/^>\s?/gm, '');
 
-// Write to clipboard with both HTML Format and plain text
+// Write to clipboard: HTML Format (UTF-8 bytes) + UnicodeText plaintext.
+// CRITICAL: HTML Format must be written as raw UTF-8 BYTES, not a PowerShell string,
+// or emojis and non-ASCII get mangled to Latin-1 (the ðŸ¤– bug).
 const tmpHtml = join(tmpdir(), 'clipmail.html');
 const tmpTxt = join(tmpdir(), 'clipmail.txt');
 const tmpPs = join(tmpdir(), 'clipmail.ps1');
-writeFileSync(tmpHtml, htmlFormat, 'utf-8');
+writeFileSync(tmpHtml, Buffer.from(htmlFormat, 'utf-8'));
 writeFileSync(tmpTxt, plainText, 'utf-8');
 writeFileSync(tmpPs, `
 Add-Type -AssemblyName System.Windows.Forms
 $htmlBytes = [System.IO.File]::ReadAllBytes('${tmpHtml.replace(/\\/g, '\\\\')}')
-$plainText = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}')
+$plainText = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}', [System.Text.Encoding]::UTF8)
 $ms = New-Object System.IO.MemoryStream(,$htmlBytes)
 $dataObj = New-Object System.Windows.Forms.DataObject
 $dataObj.SetData('HTML Format', $ms)
@@ -142,11 +167,9 @@ unlinkSync(tmpHtml);
 unlinkSync(tmpTxt);
 unlinkSync(tmpPs);
 
-const preview = plainText.substring(0, 120).replace(/\n/g, ' ↵ ');
+const preview = plainText.substring(0, 120).replace(/\n/g, ' / ');
 console.log('');
-console.log('📋 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log(`✅ HTML-ready! Ctrl+V in Outlook/Teams/Docs.`);
-console.log(`📝 ${preview}${plainText.length > 120 ? '...' : ''}`);
-console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log('HTML-ready! Ctrl+V in Outlook/Teams/Docs.');
+console.log(`${preview}${plainText.length > 120 ? '...' : ''}`);
 
 notify({ message: 'HTML clip ready' });

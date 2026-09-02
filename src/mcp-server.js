@@ -199,6 +199,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'cliplens_write_teams',
+      description: 'Write FORMATTED text to clipboard for Microsoft Teams / Outlook / Word / Google Docs paste. Converts markdown to rich HTML (Windows HTML Format clipboard). Teams keeps bold/italic/lists/links; code renders monospace. After calling, tell the user to Ctrl+V in Teams. Pass agent so /redo can recall this clip by sender. For Slack use cliplens_write_slack instead.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          markdown: { type: 'string', description: 'Markdown-formatted text to convert to rich HTML for Teams/Outlook/Docs.' },
+          agent: { type: 'string', description: 'Sending agent name. Stored in history so cliplens_redo can recall this clip by sender.' },
+        },
+        required: ['markdown'],
+      },
+    },
+    {
       name: 'cliplens_analyze',
       description: 'Auto-detect clipboard source (figma/mural/slack/unknown) and apply the matching lens. Returns structured data with source detection info. Use this as the default — no need to specify which app.',
       inputSchema: { type: 'object', properties: {} },
@@ -426,6 +438,26 @@ if ($img) {
         const clipId = appendHistory({ text: args.markdown, format: 'slack', agent });
         sendNotify({ kind: 'clip', format: 'Slack', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent });
         return { content: [{ type: 'text', text: withHint(`✅ Slack-formatted clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Slack.`) }] };
+      } catch (e) {
+        unlinkSync(tmpMd);
+        return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
+      }
+    }
+
+    case 'cliplens_write_teams': {
+      const { writeFileSync, unlinkSync } = await import('fs');
+      const { execSync } = await import('child_process');
+      const { tmpdir } = await import('os');
+      const { join } = await import('path');
+      const tmpMd = join(tmpdir(), 'cliplens-teams.md');
+      writeFileSync(tmpMd, args.markdown, 'utf-8');
+      try {
+        execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
+        unlinkSync(tmpMd);
+        const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
+        const clipId = appendHistory({ text: args.markdown, format: 'html', agent });
+        sendNotify({ kind: 'clip', format: 'Teams', title: 'Teams-clip klar', subtitle: 'Ctrl+V i Teams', agent });
+        return { content: [{ type: 'text', text: withHint(`✅ Teams/HTML clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Teams/Outlook/Docs.`) }] };
       } catch (e) {
         unlinkSync(tmpMd);
         return { content: [{ type: 'text', text: `Error: ${e.message}` }] };

@@ -23,7 +23,26 @@ for the clipboard yourself:
 | Read a Figma/Mural copy | `cliplens_lens` (lens = figma \| mural) |
 | Save a copied image for you to see | `cliplens_save_image` |
 | **Write** Slack rich text | `cliplens_write_slack` (markdown in → Quill Delta on the clipboard) |
+| **Write** Teams/Outlook/Docs rich text | `cliplens_write_teams` (markdown in → HTML Format on the clipboard) |
 | **Write** raw text | `cliplens_write_plaintext` |
+
+### Default: plain text. Formatting is opt-in.
+
+When the user says **/clip** or "put this on my clipboard" with NO format named, use
+`cliplens_write_plaintext` -- vanilla plain text, no markdown, no rich formatting. That is
+the safe default (pastes cleanly anywhere).
+
+Only reach for a formatted pen when the user names the target explicitly:
+
+| User says | Use |
+|-----------|-----|
+| /clip · "copy this" · "clipboard" (no format) | `cliplens_write_plaintext` (DEFAULT) |
+| /clip slack · "for Slack" · "as a Slack message" | `cliplens_write_slack` |
+| /clip teams · /clip outlook · "for Teams/Outlook" | `clipmail` (HTML) |
+| /clip mural · "as Mural stickies" | `clipmural` |
+
+Do NOT default to Slack/markdown. If unsure which format, use plain text and ask.
+
 
 CLI fallback (if no MCP): `clipit` (Slack), `clipmail` (Outlook/Teams HTML), `clipconsole` (strip console
 noise), `clipmural` (Mural stickies/diagrams), `cliplens capture|inspect`.
