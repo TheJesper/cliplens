@@ -10,6 +10,8 @@
  *   cliplens write patched.json
  */
 import { captureSnapshot, listFormats, captureText, writeText } from './clipboard.js';
+import { sendNotify } from './notify.js';
+import { appendHistory } from './history.js';
 import { readFileSync, writeFileSync } from 'fs';
 
 const args = process.argv.slice(2);
@@ -74,7 +76,14 @@ switch (cmd) {
   case 'write': {
     // Put plaintext on the clipboard (UTF-8, so å ä ö survive). Text comes from
     // the argument, or from stdin when piped / when no argument is given.
-    let text = args.slice(1).filter((a) => !a.startsWith('--')).join(' ');
+    // Skip flags AND the value token after each flag, so --type/--agent values
+    // never leak into the text being written.
+    const positional = [];
+    for (let i = 1; i < args.length; i++) {
+      if (args[i].startsWith('--')) { i++; continue; }
+      positional.push(args[i]);
+    }
+    let text = positional.join(' ');
     if (!text && !process.stdin.isTTY) {
       const chunks = [];
       for await (const chunk of process.stdin) chunks.push(chunk);
@@ -85,7 +94,12 @@ switch (cmd) {
       process.exit(1);
     }
     await writeText(text);
-    console.log(`✅ ${[...text].length} tecken på clipboard (UTF-8). Ctrl+V.`);
+    // Sender + clip type on the notification (same as the MCP write path).
+    const agent = flag('agent') || process.env.CLIPLENS_AGENT || 'cliplens';
+    const type = flag('type') || 'Vanilla';
+    const clipId = appendHistory({ text, format: 'plain', agent });
+    sendNotify({ kind: 'clip', format: type, title: `${type}-clip klar`, subtitle: `${[...text].length} tecken · Ctrl+V`, agent });
+    console.log(`✅ ${[...text].length} tecken på clipboard (UTF-8) — ${agent} · ${type}${clipId ? ` · id=${clipId}` : ''}. Ctrl+V.`);
     break;
   }
   default:
