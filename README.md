@@ -72,6 +72,7 @@ npm link          # global CLI aliases
 | Command | What |
 |---------|------|
 | `cliplens capture / inspect / diff` | Capture &amp; explore raw clipboard formats |
+| `cliplens text` / `cliplens write "…"` | Read clipboard plaintext / write plaintext to it (UTF-8, pipe-friendly) |
 | `clipit` | Markdown → Slack rich text on the clipboard |
 | `clipmail` | Markdown → HTML (Outlook / Teams / Docs) |
 | `clipconsole` | Read a pasted DevTools console dump, strip the noise (keep CORS / HTTP / `net::ERR_`) |

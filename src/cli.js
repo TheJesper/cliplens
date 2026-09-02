@@ -9,7 +9,7 @@
  *   cliplens patch snapshot.json --text "New text"
  *   cliplens write patched.json
  */
-import { captureSnapshot, listFormats, captureText } from './clipboard.js';
+import { captureSnapshot, listFormats, captureText, writeText } from './clipboard.js';
 import { readFileSync, writeFileSync } from 'fs';
 
 const args = process.argv.slice(2);
@@ -71,8 +71,25 @@ switch (cmd) {
     console.log(text);
     break;
   }
+  case 'write': {
+    // Put plaintext on the clipboard (UTF-8, so å ä ö survive). Text comes from
+    // the argument, or from stdin when piped / when no argument is given.
+    let text = args.slice(1).filter((a) => !a.startsWith('--')).join(' ');
+    if (!text && !process.stdin.isTTY) {
+      const chunks = [];
+      for await (const chunk of process.stdin) chunks.push(chunk);
+      text = Buffer.concat(chunks).toString('utf8');
+    }
+    if (!text) {
+      console.error('cliplens write: nothing to write (pass text as an argument or pipe it on stdin)');
+      process.exit(1);
+    }
+    await writeText(text);
+    console.log(`✅ ${[...text].length} tecken på clipboard (UTF-8). Ctrl+V.`);
+    break;
+  }
   default:
     console.log('cliplens — ClipLens — universal clipboard skill');
-    console.log('Commands: capture, inspect, diff, formats, text');
+    console.log('Commands: capture, inspect, diff, formats, text, write');
     console.log('Use --help for details');
 }
