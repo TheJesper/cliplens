@@ -10,6 +10,7 @@
  *   cliplens write patched.json
  */
 import { captureSnapshot, listFormats, captureText, writeText } from './clipboard.js';
+import { humanize } from './humanize.js';
 import { sendNotify } from './notify.js';
 import { appendHistory } from './history.js';
 import { clipSound } from './state.js';
@@ -94,6 +95,10 @@ switch (cmd) {
       console.error('cliplens write: nothing to write (pass text as an argument or pipe it on stdin)');
       process.exit(1);
     }
+    // De-AI the text by default (strip em dashes, ellipsis char, fancy bullets etc).
+    // --raw leaves it exactly as given (true passthrough of input).
+    const raw = args.includes('--raw');
+    if (!raw) text = humanize(text);
     await writeText(text);
     // Sender + clip type on the notification (same as the MCP write path).
     const agent = flag('agent') || process.env.CLIPLENS_AGENT || 'cliplens';
