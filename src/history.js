@@ -20,13 +20,22 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { readState, envFlag } from './state.js';
 
 const MAX_ENTRIES = 10;
 
-/** Is disk history enabled? OFF unless CLIPLENS_HISTORY is on/1/true/yes. */
+/**
+ * Is disk history ("cache") enabled? Precedence:
+ *   1. env CLIPLENS_HISTORY, if explicitly set (on/1/true/yes = on, else off)
+ *   2. local ~/.cliplens/state.json { history: true } -- the runtime toggle
+ *   3. default OFF (privacy-first; the repo default is always off)
+ * The env override lets CI/power users force a value; the local toggle is what
+ * `/cliplens cache on|off` flips, and it never touches the repo.
+ */
 export function historyEnabled() {
-  const v = String(process.env.CLIPLENS_HISTORY || '').trim().toLowerCase();
-  return v === 'on' || v === '1' || v === 'true' || v === 'yes';
+  const env = envFlag('CLIPLENS_HISTORY');
+  if (env !== undefined) return env;
+  return readState().history === true;
 }
 
 /** TTL in minutes (default 60). 0 or negative disables expiry. */

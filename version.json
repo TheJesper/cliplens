@@ -1,0 +1,11 @@
+{
+  "name": "cliplens",
+  "version": "0.3.0",
+  "skillVersion": "3",
+  "channel": "stable",
+  "changelog": {
+    "0.3.0": "Runtime clip-cache toggle: cliplens_cache on|off|status. Local-only state (~/.cliplens/state.json), never committed, repo default OFF. Kiro skill install fixed to folder/SKILL.md.",
+    "0.2.0": "Universal installer for all MCP clients + self-update version check. SKILL default = plaintext (vanilla), formatting opt-in.",
+    "0.1.0": "Initial: Slack/Teams/Mural/Outlook lenses+pens, notify daemon, clip history."
+  }
+}

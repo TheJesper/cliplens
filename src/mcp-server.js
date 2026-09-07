@@ -25,7 +25,8 @@ import { captureSnapshot, captureText, listFormats, captureFormat, writeText } f
 import { parseFigmaText } from './lenses/figma.js';
 import { parseMuralHtml } from './lenses/mural.js';
 import { sendNotify } from './notify.js';
-import { appendHistory, latestByAgent, getById, clearHistory } from './history.js';
+import { appendHistory, latestByAgent, getById, clearHistory, historyEnabled } from './history.js';
+import { setState, clearStateKey, envFlag, readState } from './state.js';
 import { replay } from './replay.js';
 import { randomHint } from './hints.js';
 import { penImage } from './pens/image.js';
@@ -41,12 +42,70 @@ function withHint(text) {
 }
 
 /**
+ * Save the clipboard image (if any) to tmp/clip-image.png. Shared by
+ * cliplens_save_image and cliplens_analyze so both behave identically.
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.reading] true when this is a READ of an existing clip
+ *   (not a new copy) — the popup then says "Image read", so we don't imply the
+ *   user just copied something new.
+ * @param {string}  [opts.agent]
+ * @returns {Promise<{path:string, dims:string}|null>} null when no image present.
+ */
+async function saveClipImage({ reading = false, agent } = {}) {
+  const { writeFileSync, unlinkSync } = await import('fs');
+  const { execSync } = await import('child_process');
+  const { tmpdir } = await import('os');
+  const { join } = await import('path');
+  const outPath = join(import.meta.dirname, '..', 'tmp', 'clip-image.png');
+  const ps = join(tmpdir(), 'save-clip-img.ps1');
+  writeFileSync(ps, `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$img = [System.Windows.Forms.Clipboard]::GetImage()
+if ($img) {
+  $img.Save('${outPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)
+  Write-Host "$($img.Width)x$($img.Height)"
+} else {
+  Write-Host "NO_IMAGE"
+}
+`);
+  let result;
+  try {
+    result = execSync(`powershell -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8' }).trim();
+  } finally {
+    try { unlinkSync(ps); } catch { /* ignore */ }
+  }
+  if (result === 'NO_IMAGE' || !result) return null;
+  const who = agent || process.env.CLIPLENS_AGENT || 'cliplens';
+  // A READ is not a new clip — say so, and never route it through the "clip"
+  // kind (which the daemon styles as a fresh write). Show the saved path.
+  sendNotify({
+    kind: 'info',
+    emoji: '\u{1F5BC}\u{FE0F}',
+    title: reading ? 'Bild inläst' : 'Bild hämtad',
+    subtitle: reading ? outPath : `${result} px`,
+    agent: who,
+  });
+  return { path: outPath, dims: result };
+}
+
+/**
  * Auto-detect clipboard source app from available formats and content.
  * Returns: { app: string, confidence: 'high'|'medium'|'low', signals: string[] }
  */
 function detectClipSource(formats, text) {
   const signals = [];
   const formatNames = formats.map(f => f.name || f);
+
+  // Image detection (cheap, by format name). Windows exposes bitmaps as
+  // Bitmap / DeviceIndependentBitmap / Format17 (CF_DIBV5); apps also offer PNG.
+  // These are unambiguous, so check first — otherwise analyze falls through to
+  // raw-text and returns "" for a screenshot (the reported bug).
+  if (formatNames.some(f => /^(Bitmap|DeviceIndependentBitmap|Format17|PNG|image\/png)$/i.test(f))) {
+    signals.push('format:image');
+    return { app: 'image', confidence: 'high', signals };
+  }
 
   // Figma detection
   if (formatNames.some(f => /figma/i.test(f))) {
@@ -262,6 +321,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: { type: 'object', properties: {} },
     },
     {
+      name: 'cliplens_cache',
+      description: "Toggle clip history/cache ON or OFF at runtime, or report status. This is the /cliplens cache (or /cliplens memory) on|off|status switch. The choice is LOCAL to this machine (~/.cliplens/state.json) and is NEVER committed — the repo default is always OFF. No client restart needed. When ON, generated clips are cached on disk (max ~1h, auto-expiring) so they can be reclipped; when OFF nothing is written. Use when the user says 'cache on', 'memory off', 'turn on clip history', 'enable reclip', or asks whether history is on.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['on', 'off', 'status'], description: "on = enable cache, off = disable, status = report current state. Default: status." },
+        },
+      },
+    },
+    {
       name: 'cliplens_pen_image',
       description: "Put a real image on the clipboard (transparency preserved) so any app pastes it as an image — Mural, Slack, Teams, Word. Use for icons/screenshots/diagrams. Provide an absolute file path. FatCow icons: pass a name (e.g. 'save', 'folder') to auto-resolve from the FatCow set. After calling, tell the user to Ctrl+V.",
       inputSchema: {
@@ -390,30 +459,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case 'cliplens_save_image': {
-      const { writeFileSync, unlinkSync } = await import('fs');
-      const { execSync } = await import('child_process');
-      const { tmpdir } = await import('os');
-      const { join } = await import('path');
-      const outPath = join(import.meta.dirname, '..', 'tmp', 'clip-image.png');
-      const ps = join(tmpdir(), 'save-clip-img.ps1');
-      writeFileSync(ps, `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$img = [System.Windows.Forms.Clipboard]::GetImage()
-if ($img) {
-  $img.Save('${outPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)
-  Write-Host "$($img.Width)x$($img.Height)"
-} else {
-  Write-Host "NO_IMAGE"
-}
-`);
-      const result = execSync(`powershell -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8' }).trim();
-      unlinkSync(ps);
-      if (result === 'NO_IMAGE') {
+      const saved = await saveClipImage({ reading: false, agent: args?.agent });
+      if (!saved) {
         return { content: [{ type: 'text', text: 'No image in clipboard. Use cliplens_formats to check what formats are available.' }] };
       }
-      sendNotify({ kind: 'info', emoji: '\u{1F5BC}\u{FE0F}', title: 'Bild hämtad', subtitle: `${result} px`, agent: process.env.CLIPLENS_AGENT || 'cliplens' });
-      return { content: [{ type: 'text', text: `Image saved: ${outPath} (${result} px). Use read_file to view it.` }] };
+      return { content: [{ type: 'text', text: `Image saved: ${saved.path} (${saved.dims} px). Use read_file to view it.` }] };
     }
 
     case 'cliplens_write_plaintext': {
@@ -477,7 +527,14 @@ if ($img) {
       const detection = detectClipSource(lastSnapshot.formats, clipText);
 
       let analysis;
-      if (detection.app === 'figma') {
+      if (detection.app === 'image') {
+        // Screenshot / pasted image: save it and report type+dims+path instead
+        // of empty raw-text. This is a READ, so the popup says "Image read".
+        const saved = await saveClipImage({ reading: true });
+        analysis = saved
+          ? { type: 'image', dimensions: saved.dims, savedPath: saved.path, hint: 'Use read_file on savedPath to view the image.' }
+          : { type: 'image', error: 'Image format present but could not be saved.' };
+      } else if (detection.app === 'figma') {
         analysis = parseFigmaText(clipText);
       } else if (detection.app === 'mural') {
         let html = '';
@@ -606,6 +663,30 @@ if ($img) {
     case 'cliplens_clear': {
       const n = clearHistory();
       return { content: [{ type: 'text', text: `🧹 Cleared clip history — ${n} clip(s) removed from disk.` }] };
+    }
+
+    case 'cliplens_cache': {
+      const action = (args?.action || 'status').toLowerCase();
+      const envOverride = envFlag('CLIPLENS_HISTORY'); // set in mcp.json env, wins over local toggle
+      const envNote = envOverride !== undefined
+        ? ` (note: CLIPLENS_HISTORY=${envOverride ? 'on' : 'off'} is set in env and OVERRIDES this local toggle — remove it from mcp.json to let the switch take effect)`
+        : '';
+
+      if (action === 'on') {
+        setState('history', true);
+        const effective = historyEnabled();
+        return { content: [{ type: 'text', text: `✅ Clip cache turned ON (local to this machine, not committed). Generated clips are now cached in ~/.cliplens/history.json, max ~1h, auto-expiring — reclip with cliplens_reclip. Effective now: ${effective ? 'ON' : 'OFF'}${envNote}` }] };
+      }
+      if (action === 'off') {
+        clearStateKey('history');
+        const removed = clearHistory(); // also wipe anything already on disk
+        const effective = historyEnabled();
+        return { content: [{ type: 'text', text: `🔒 Clip cache turned OFF (back to the private default) and ${removed} cached clip(s) wiped. Effective now: ${effective ? 'ON' : 'OFF'}${envNote}` }] };
+      }
+      // status
+      const on = historyEnabled();
+      const src = envOverride !== undefined ? 'env CLIPLENS_HISTORY' : (readState().history === true ? 'local toggle' : 'default');
+      return { content: [{ type: 'text', text: `Clip cache is ${on ? 'ON' : 'OFF'} (source: ${src}). Turn ${on ? 'off with action=off' : 'on with action=on'}. Repo default is always OFF; the toggle is local only.` }] };
     }
 
     case 'cliplens_pen_image': {

@@ -238,3 +238,37 @@ publishes prebuilt binaries per OS). notify.js routes: daemon (if built) → nat
    (per-toast token) and expires them; `--id` updates a card in place instead of stacking.
 4. **Per-type icons** ✅ — `--type` picks the embedded FatCow icon via `ui::icon_for`:
    Slack=`comment`, Mural=`note`, Image=`picture`, Prompt=`wand`, else clipboard.
+
+
+## Universal install + self-update (2026-09-02)
+
+ClipLens now wires itself into **every** AI client on a machine, in each one's native format, and knows
+when it's out of date.
+
+| File | Purpose |
+|------|---------|
+| `version.json` | Single source of truth: `version`, `skillVersion`, `changelog`. Bump on every meaningful change. |
+| `tools/lib/clients.mjs` | The client matrix — WHERE each client keeps MCP config + skill, and WHAT format. One row per client; edit here when a client changes convention. |
+| `tools/install.mjs` | Detect installed clients, write MCP config (JSON `mcpServers` / VS Code `servers` / Codex TOML) + skill (flat-md / folder SKILL.md / .mdc rule), register repo location + version in `~/.cliplens/install.json`. Idempotent, merges. |
+| `tools/check-updates.mjs` | Compare installed vs repo version. Prints `UP_TO_DATE` / `UPDATE` / `NOT_INSTALLED`. Never throws. |
+
+**Client matrix (verified Feb 2026):**
+
+| Client | MCP file | MCP key/format | Skill destination |
+|--------|----------|----------------|-------------------|
+| Kiro (IDE+CLI) | `~/.kiro/settings/mcp.json` | `mcpServers` (JSON) | `~/.kiro/skills/cliplens.md` (flat) |
+| Claude Code | `~/.claude.json` | `mcpServers` (JSON) | `~/.claude/skills/cliplens/SKILL.md` |
+| Claude Desktop | `%APPDATA%/Claude/claude_desktop_config.json` | `mcpServers` (JSON) | none |
+| VS Code Copilot | `%APPDATA%/Code/User/mcp.json` | **`servers`** (JSON) | none (uses AGENTS.md) |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers` (JSON) | `~/.cursor/rules/cliplens.mdc` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` (JSON, no env interp) | none |
+| Codex | `~/.codex/config.toml` | `[mcp_servers.cliplens]` (TOML) | `~/.codex/skills/cliplens/SKILL.md` |
+| Gemini | `~/.gemini/settings.json` | `mcpServers` (JSON) | `~/.gemini/skills/cliplens/SKILL.md` |
+
+**Why:** the installed skill is a COPY and drifts (that's the "always Slack" bug we just fixed — the copy
+was old). The registry (`~/.cliplens/install.json`) records `repoRoot` + version so the skill can, once per
+session, run `check-updates.mjs` and say *"Det finns en ny version — ska vi uppdatera?"*. Re-run
+`tools/install.mjs` after every `git pull`.
+
+**Rule for agents:** SKILL.md is the source; `tools/install.mjs` distributes it. Never hand-edit an
+installed skill copy — edit `SKILL.md`, bump `version.json`, re-run the installer.

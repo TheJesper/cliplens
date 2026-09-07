@@ -58,6 +58,29 @@ auto-loaded — check `cliplens_analyze` output; don't hard-code company formats
    → straight quotes, zero-width spaces, BOM). Keep your tone plain and human; don't undo it with fancy
    punctuation.
 
+## Clip cache / history (off by default) — `/cliplens cache on|off`
+
+Clip history ("cache") lets you **reclip** a past clip exactly. It is **OFF by default** for privacy —
+nothing generated is written to disk unless the user turns it on. Toggle it at runtime with the
+`cliplens_cache` tool (no restart needed):
+
+| User says | Call |
+|-----------|------|
+| "cache on" · "memory on" · "enable clip history" · "let me reclip" | `cliplens_cache { action: "on" }` |
+| "cache off" · "memory off" · "stop saving clips" | `cliplens_cache { action: "off" }` (also wipes what's cached) |
+| "is cache on?" · "history status" | `cliplens_cache { action: "status" }` |
+
+The toggle is **local to the machine** (`~/.cliplens/state.json`) and is **never committed** — the repo
+default is always OFF. When ON, clips live at most ~1h and auto-expire. To wipe immediately use
+`/clip clear` (`cliplens_clear`). An explicit `CLIPLENS_HISTORY` in mcp.json env overrides the toggle.
+
+**Reclip is free and idempotent — don't verify first.** Each write returns a `clipId` (`clip_…`).
+When the user says "reclip", just call `cliplens_reclip { id }` (or with no id for the latest). It
+re-writes the *stored* payload exactly — no LLM, no regeneration. If that clip is already on the
+clipboard, the reclip is a harmless no-op (same bytes). So never spend a tool call or tokens READING the
+clipboard to check whether it's "still there" — reclipping costs a cheap clipboard write, checking costs
+more. Just reclip.
+
 ## The clip daemon (popup)
 
 A lightweight background daemon (`cliplens-daemon`) shows a small transparent **popup** when a clip is
@@ -76,3 +99,42 @@ session unless asked.
 ## Flow, in one line
 
 `user asks in plain English → you pick a lens (read) or pen (write) → native clipboard format → user pastes.`
+
+## Stay current — check for a newer ClipLens
+
+ClipLens is a living tool; the repo changes often. This skill file is a **copy** installed into your
+client — it can drift out of date. The repo remembers where it lives (a registry at
+`~/.cliplens/install.json`, written by the installer), so you can always find and update it.
+
+**Once per session, when ClipLens first comes up, run the version check** (quiet, fire-and-forget):
+
+```bash
+node "<repoRoot>/tools/check-updates.mjs"
+```
+
+`<repoRoot>` is in `~/.cliplens/install.json` (`repoRoot`). If the registry is missing, ClipLens was
+never installed here — run the installer (below). The check prints one line:
+
+| Output | What you do |
+|--------|-------------|
+| `UP_TO_DATE 0.2.0` | Nothing. Stay quiet. |
+| `UPDATE installed=… repo=…` | Tell the user: **"Det finns en ny version av ClipLens (X → Y). Ska vi uppdatera?"** — include the one-line changelog. On yes, run the installer. |
+| `NOT_INSTALLED …` | ClipLens isn't wired into this client yet — offer to run the installer. |
+
+Do NOT nag: check at most once per session, and only speak up on `UPDATE` or `NOT_INSTALLED`.
+
+## Install / update ClipLens into any client
+
+One universal installer wires ClipLens into **every** AI client on the machine (Kiro IDE + CLI, Claude
+Code, Claude Desktop, VS Code Copilot, Cursor, Windsurf, Codex, Gemini) in each client's native format —
+MCP config **and** this skill file — then records the repo location + version so the check above works.
+
+```bash
+node "<repoRoot>/tools/install.mjs"            # install/update into all detected clients
+node "<repoRoot>/tools/install.mjs --list"     # show which clients are present
+node "<repoRoot>/tools/install.mjs --dry-run"  # preview, write nothing
+node "<repoRoot>/tools/install.mjs --only kiro,cursor"
+```
+
+It's idempotent and merges into existing configs — safe to re-run after every `git pull`. After it runs,
+tell the user to restart the affected client so the MCP server reloads.
