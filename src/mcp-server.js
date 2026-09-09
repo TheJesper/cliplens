@@ -35,10 +35,49 @@ import { drawDiagram } from './pens/draw.js';
 // Keep last capture in memory for inspect
 let lastSnapshot = null;
 
-/** Append an occasional discovery hint to a response text (25% of the time). */
-function withHint(text) {
-  const h = randomHint();
-  return h ? `${text}\n\n${h}` : text;
+/**
+ * Extract clickable links + a plain-text rendering from an HTML clipboard body.
+ * Rich pastes (Teams/Outlook/wiki) put real <a href> links here that the plain
+ * text format loses. Returns { links:[{text,href}], text } — best-effort, never
+ * throws. Strips the CF_HTML header if present.
+ */
+function extractHtmlLinks(html) {
+  const out = { links: [], text: '' };
+  if (!html) return out;
+  // Drop the Windows CF_HTML header (everything up to <html or <!DOCTYPE).
+  const bodyStart = html.search(/<(?:html|!doctype|body|div|span|a\b)/i);
+  const body = bodyStart >= 0 ? html.slice(bodyStart) : html;
+  // Collect <a href="...">text</a>.
+  const re = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    const href = decodeEntities(m[1].trim());
+    const text = decodeEntities(m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
+    if (href && !/^javascript:/i.test(href)) out.links.push({ text, href });
+  }
+  // Plain-text rendering: strip tags, collapse whitespace, decode entities.
+  out.text = decodeEntities(
+    body
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  ).slice(0, 3000);
+  return out;
+}
+
+/** Decode the common HTML entities (incl. &amp; which otherwise corrupts URLs). */
+function decodeEntities(s) {
+  return String(s)
+    .replace(/&amp;/gi, '&')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => {
+      try { return String.fromCodePoint(parseInt(n, 10)); } catch { return _; }
+    });
 }
 
 /**
@@ -157,6 +196,14 @@ function detectClipSource(formats, text) {
   if (htmlFormat && htmlFormat.preview && /slack-/i.test(htmlFormat.preview)) {
     signals.push('html:slack-class');
     return { app: 'slack', confidence: 'medium', signals };
+  }
+
+  // Teams / Outlook rich paste: HTML carries data-teams="true" (a reliable
+  // signature) and usually a Chromium source URL. Treat as "teams" so the
+  // analyzer extracts the real <a href> links instead of the broken plain text.
+  if (htmlFormat && htmlFormat.preview && /data-teams\s*=\s*["']?true/i.test(htmlFormat.preview)) {
+    signals.push('html:data-teams');
+    return { app: 'teams', confidence: 'high', signals };
   }
 
   // Figma heuristic: lots of repeated lines (layer names + text), UI terms
@@ -524,7 +571,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Capture snapshot for format detection
       lastSnapshot = await captureSnapshot('auto');
       const clipText = await captureText();
+
+      // Read the FULL HTML clipboard once (snapshot preview is only ~200 chars,
+      // so signatures/links deeper in the body were missed). Shared by detection
+      // and every branch so links are never lost. Best-effort, never throws.
+      let fullHtml = '';
+      if (lastSnapshot.formats.some(f => f.name === 'HTML Format')) {
+        try {
+          const b64 = await captureFormat('HTML Format');
+          fullHtml = Buffer.from(b64, 'base64').toString('utf-8');
+        } catch { /* no HTML format */ }
+      }
+
       const detection = detectClipSource(lastSnapshot.formats, clipText);
+      // Upgrade to Teams when the FULL html carries data-teams but the 200-char
+      // preview didn't reach it (the tag usually sits deep in the body).
+      if (detection.app === 'unknown' && /data-teams\s*=\s*["']?true/i.test(fullHtml)) {
+        detection.app = 'teams';
+        detection.confidence = 'high';
+        detection.signals.push('html:data-teams(full)');
+      }
+
+      // Generic enrichment for ALL sources: pull clickable links out of the HTML
+      // body once. Attached to whichever branch runs below.
+      const htmlInfo = fullHtml ? extractHtmlLinks(fullHtml) : { links: [], text: '' };
 
       let analysis;
       if (detection.app === 'image') {
@@ -537,14 +607,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } else if (detection.app === 'figma') {
         analysis = parseFigmaText(clipText);
       } else if (detection.app === 'mural') {
-        let html = '';
-        try {
-          const b64 = await captureFormat('HTML Format');
-          html = Buffer.from(b64, 'base64').toString('utf-8');
-        } catch { /* no HTML format */ }
-        analysis = parseMuralHtml(html);
+        analysis = parseMuralHtml(fullHtml);
+      } else if (detection.app === 'teams') {
+        // Rich Teams/Outlook paste: links live in HTML, not plain text.
+        analysis = { type: 'teams-rich', text: htmlInfo.text || clipText.substring(0, 3000), links: htmlInfo.links };
       } else {
-        analysis = { type: 'raw-text', text: clipText.substring(0, 3000) };
+        // Unknown source: surface rich content if HTML has links, rather than
+        // lying with broken plain text.
+        analysis = htmlInfo.links.length > 0
+          ? { type: 'rich-text', text: htmlInfo.text || clipText.substring(0, 3000), links: htmlInfo.links }
+          : { type: 'raw-text', text: clipText.substring(0, 3000) };
+      }
+      // Additive: attach links to any branch that lacks them (figma/mural/image).
+      if (htmlInfo.links.length > 0 && analysis && analysis.links === undefined) {
+        analysis.links = htmlInfo.links;
       }
 
       const result = {

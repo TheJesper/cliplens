@@ -32,7 +32,16 @@ export async function listFormats() {
   return Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
 }
 
-/** Capture a specific clipboard format as base64 */
+/**
+ * Capture a specific clipboard format as base64.
+ *
+ * ENCODING NOTE: Windows hands string formats (e.g. 'HTML Format') back to us
+ * already decoded via the ANSI codepage (cp1252), but their bytes on the wire
+ * are UTF-8. UTF-8-encoding that mangled string double-corrupts multibyte chars
+ * (em-dash — became â€", å/ä/ö broke). So for string data we re-derive the
+ * ORIGINAL bytes through cp1252 and base64 those; Node then decodes as UTF-8
+ * correctly. cp1252 round-trips genuine single-byte text loss-lessly too.
+ */
 export async function captureFormat(formatName) {
   const { execSync } = await import('child_process');
   const script = `
@@ -41,7 +50,8 @@ export async function captureFormat(formatName) {
     if ($data -is [System.IO.MemoryStream]) {
       [Convert]::ToBase64String($data.ToArray())
     } elseif ($data -is [string]) {
-      [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($data))
+      $cp = [System.Text.Encoding]::GetEncoding(1252)
+      [Convert]::ToBase64String($cp.GetBytes($data))
     } else {
       'UNSUPPORTED_TYPE:' + $data.GetType().FullName
     }
