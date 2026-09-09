@@ -120,6 +120,9 @@ enum LoopCmd {
     ShowPicker,
     DismissPicker,
     CommitPicker,
+    /// Move the picker selection up / down one row (arrow keys).
+    PickerPrev,
+    PickerNext,
     /// User clicked a toast card -> dismiss that one (by its internal token).
     DismissToast(u64),
 }
@@ -146,11 +149,13 @@ fn run_daemon() {
         // Cross-platform default: Shift+Alt+V (Shift+Option+V on macOS) — global, and free of the
         // Ctrl+Shift+V "paste without formatting" clash.
         HotKey::new(Some(Modifiers::SHIFT | Modifiers::ALT), Code::KeyV),
-        // Nordic § / ½ key candidates (layout-specific) + a Ctrl+Shift+V fallback.
+        // Nordic § / ½ key candidates (layout-specific).
         HotKey::new(Some(Modifiers::CONTROL), Code::Backquote),
         HotKey::new(Some(Modifiers::CONTROL), Code::IntlBackslash),
         HotKey::new(Some(Modifiers::CONTROL), Code::Quote),
-        HotKey::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyV),
+        // NOTE: Ctrl+Shift+V is deliberately NOT registered — on Windows and in
+        // most apps it is the built-in "paste without formatting" shortcut, so
+        // grabbing it globally would both clash and defeat ClipLens's rich pens.
     ];
     let mut hk_ids = Vec::new();
     for hk in candidates {
@@ -158,12 +163,17 @@ fn run_daemon() {
             hk_ids.push(hk.id());
         }
     }
-    // Escape / Enter are grabbed ONLY while the picker is open (registered on
-    // open, unregistered on close) so they never interfere with normal typing.
+    // Escape / Enter / Arrows are grabbed ONLY while the picker is open
+    // (registered on open, unregistered on close) so they never interfere with
+    // normal typing.
     let esc_hotkey = HotKey::new(None, Code::Escape);
     let enter_hotkey = HotKey::new(None, Code::Enter);
+    let up_hotkey = HotKey::new(None, Code::ArrowUp);
+    let down_hotkey = HotKey::new(None, Code::ArrowDown);
     let esc_id = esc_hotkey.id();
     let enter_id = enter_hotkey.id();
+    let up_id = up_hotkey.id();
+    let down_id = down_hotkey.id();
     let hk_proxy = proxy.clone();
     std::thread::spawn(move || {
         let rx = GlobalHotKeyEvent::receiver();
@@ -176,6 +186,10 @@ fn run_daemon() {
                     let _ = hk_proxy.send_event(LoopCmd::DismissPicker);
                 } else if ev.id == enter_id {
                     let _ = hk_proxy.send_event(LoopCmd::CommitPicker);
+                } else if ev.id == up_id {
+                    let _ = hk_proxy.send_event(LoopCmd::PickerPrev);
+                } else if ev.id == down_id {
+                    let _ = hk_proxy.send_event(LoopCmd::PickerNext);
                 } else if hk_ids.contains(&ev.id) {
                     let _ = hk_proxy.send_event(LoopCmd::ShowPicker);
                 }
@@ -266,14 +280,26 @@ fn run_daemon() {
             }
             Event::UserEvent(LoopCmd::ShowPicker) => {
                 if let Some(p) = &mut picker {
-                    // Toggle/cycle to next entry.
-                    p.cycle();
+                    // Re-trigger of the open hotkey moves down one row (wrap).
+                    p.next();
                 } else if let Some(p) = Picker::spawn(target) {
-                    // Grab Escape/Enter only while the picker is open so they
-                    // dismiss/commit instead of leaking to the app behind.
+                    // Grab Escape/Enter/Arrows only while the picker is open so
+                    // they navigate/commit instead of leaking to the app behind.
                     let _ = hotkey_mgr.register(esc_hotkey);
                     let _ = hotkey_mgr.register(enter_hotkey);
+                    let _ = hotkey_mgr.register(up_hotkey);
+                    let _ = hotkey_mgr.register(down_hotkey);
                     picker = Some(p);
+                }
+            }
+            Event::UserEvent(LoopCmd::PickerNext) => {
+                if let Some(p) = &mut picker {
+                    p.next();
+                }
+            }
+            Event::UserEvent(LoopCmd::PickerPrev) => {
+                if let Some(p) = &mut picker {
+                    p.prev();
                 }
             }
             Event::UserEvent(LoopCmd::DismissPicker) => {
@@ -281,6 +307,8 @@ fn run_daemon() {
                     p.close();
                     let _ = hotkey_mgr.unregister(esc_hotkey);
                     let _ = hotkey_mgr.unregister(enter_hotkey);
+                    let _ = hotkey_mgr.unregister(up_hotkey);
+                    let _ = hotkey_mgr.unregister(down_hotkey);
                     picker = None;
                 }
             }
@@ -289,6 +317,8 @@ fn run_daemon() {
                     p.commit();
                     let _ = hotkey_mgr.unregister(esc_hotkey);
                     let _ = hotkey_mgr.unregister(enter_hotkey);
+                    let _ = hotkey_mgr.unregister(up_hotkey);
+                    let _ = hotkey_mgr.unregister(down_hotkey);
                     picker = None;
                 }
             }
@@ -298,12 +328,14 @@ fn run_daemon() {
         // Expire finished toasts.
         active.retain(|t| t.start.elapsed() < t.duration);
 
-        // Picker timeout -> commit selection, and release Escape/Enter grabs.
+        // Picker timeout -> commit selection, and release the key grabs.
         if let Some(p) = &mut picker {
             if p.should_commit() {
                 p.commit();
                 let _ = hotkey_mgr.unregister(esc_hotkey);
                 let _ = hotkey_mgr.unregister(enter_hotkey);
+                let _ = hotkey_mgr.unregister(up_hotkey);
+                let _ = hotkey_mgr.unregister(down_hotkey);
                 picker = None;
             }
         }
@@ -424,21 +456,32 @@ impl Picker {
         })
     }
 
-    fn cycle(&mut self) {
+    fn next(&mut self) {
         if self.entries.is_empty() {
             return;
         }
         self.selected = (self.selected + 1) % self.entries.len();
         self.last_interaction = Instant::now();
-        let html = ui::picker_html(&self.entries, self.selected);
-        // Re-render by loading fresh HTML.
-        let _ = self.webview.load_html(&html);
+        // Move the highlight in-place via JS — reloading the whole document
+        // flashed the window on every keypress.
+        let _ = self.webview.evaluate_script(&format!("window.sel({})", self.selected));
     }
 
-    /// Commit after ~900ms of no further cycling.
+    fn prev(&mut self) {
+        if self.entries.is_empty() {
+            return;
+        }
+        self.selected = (self.selected + self.entries.len() - 1) % self.entries.len();
+        self.last_interaction = Instant::now();
+        let _ = self.webview.evaluate_script(&format!("window.sel({})", self.selected));
+    }
+
+    /// Commit after a period of no further cycling. 900ms was far too short to
+    /// even read the list; give the user time to look and cycle (Shift+Alt+V)
+    /// or dismiss (Esc). Enter commits immediately.
     fn should_commit(&self) -> bool {
         !self.entries.is_empty()
-            && self.last_interaction.elapsed() > Duration::from_millis(900)
+            && self.last_interaction.elapsed() > Duration::from_millis(5000)
     }
 
     fn commit(&self) {

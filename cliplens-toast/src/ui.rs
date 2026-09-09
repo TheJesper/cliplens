@@ -156,20 +156,67 @@ fn confetti_html() -> String {
     out
 }
 
+/// Render a single clip line with light markdown: *bold*, _italic_, `code`.
+/// Escapes HTML first, then applies the three inline styles. Newlines collapse
+/// to a space so the row stays a one-liner.
+fn md_line(s: &str) -> String {
+    let mut t = esc(s);
+    t = t.replace('\n', " ").replace('\r', " ");
+    // `code` first so * / _ inside code aren't re-processed as emphasis.
+    t = apply_pair(&t, '`', "<code>", "</code>");
+    t = apply_pair(&t, '*', "<b>", "</b>");
+    t = apply_pair(&t, '_', "<i>", "</i>");
+    t
+}
+
+/// Replace balanced pairs of a single delimiter char with open/close tags.
+/// Only matched pairs are converted; a trailing unmatched delimiter is kept.
+fn apply_pair(s: &str, delim: char, open: &str, close: &str) -> String {
+    let total = s.matches(delim).count();
+    if total < 2 {
+        return s.to_string();
+    }
+    // Convert only complete pairs; if odd count, the last delimiter is literal.
+    let convertible = total - (total % 2);
+    let mut out = String::with_capacity(s.len() + convertible * open.len());
+    let mut open_next = true;
+    let mut done = 0;
+    for ch in s.chars() {
+        if ch == delim && done < convertible {
+            out.push_str(if open_next { open } else { close });
+            open_next = !open_next;
+            done += 1;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// The clip picker: a vertical list of recent agent clips, one highlighted.
+/// Each row shows a type icon (incl. image), the sender (agent) as a small
+/// badge, and the clip text with light markdown rendering.
 pub fn picker_html(entries: &[ClipEntry], selected: usize) -> String {
     let mut rows = String::new();
     for (i, e) in entries.iter().enumerate() {
         let active = if i == selected { " active" } else { "" };
-        let badge = if e.format.is_empty() { "clip" } else { &e.format };
+        let type_label = if e.format.is_empty() { "Normal" } else { &e.format };
+        let icon_b64 = icon_for(type_label).trim();
+        let sender = if e.agent.is_empty() { "cliplens" } else { &e.agent };
         rows.push_str(&format!(
-            r#"<div class="row{active}">
-  <div class="badge">{badge}</div>
-  <div class="label">{label}</div>
+            r#"<div class="row{active}" data-idx="{idx}">
+  <img class="ico" src="data:image/png;base64,{icon}" alt=""/>
+  <div class="text">
+    <div class="label">{label}</div>
+    <div class="meta"><span class="who">{who}</span><span class="fmt">{fmt}</span></div>
+  </div>
 </div>"#,
             active = active,
-            badge = esc(badge),
-            label = esc(&e.title),
+            idx = i,
+            icon = icon_b64,
+            label = md_line(&e.title),
+            who = esc(sender),
+            fmt = esc(type_label),
         ));
     }
     if entries.is_empty() {
@@ -179,26 +226,44 @@ pub fn picker_html(entries: &[ClipEntry], selected: usize) -> String {
         r#"<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
 {base}
 .wrap{{position:fixed;inset:0;padding:14px;box-sizing:border-box;
-  background:rgba(74,54,40,0.92);border-radius:20px;color:#F5EFE8;
-  animation:pop 260ms cubic-bezier(0.22,1,0.36,1);}}
+  background:rgba(74,54,40,0.94);border-radius:20px;color:#F5EFE8;
+  animation:pop 220ms cubic-bezier(0.22,1,0.36,1);}}
 .head{{display:flex;align-items:center;gap:10px;margin:2px 6px 12px;}}
 .head .e{{font-family:"Segoe UI Emoji","Apple Color Emoji",sans-serif;font-size:22px;}}
-.head .h{{font-size:14px;font-weight:600;color:rgba(235,235,245,0.8);}}
-.head .hint{{margin-left:auto;font-size:11px;color:rgba(235,235,245,0.45);}}
-.row{{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;
+.head .h{{font-size:14px;font-weight:600;color:rgba(235,235,245,0.85);}}
+.head .hint{{margin-left:auto;font-size:11px;color:rgba(235,235,245,0.5);}}
+.row{{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:12px;
   margin-bottom:6px;background:rgba(255,255,255,0.04);transition:background 120ms;}}
-.row.active{{background:rgba(10,132,255,0.22);outline:1px solid rgba(10,132,255,0.55);}}
-.badge{{font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;
-  color:rgba(235,235,245,0.55);background:rgba(255,255,255,0.08);
-  padding:3px 7px;border-radius:6px;min-width:34px;text-align:center;}}
-.label{{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;}}
+.row.active{{background:rgba(10,132,255,0.24);outline:1.5px solid rgba(10,132,255,0.7);}}
+.ico{{width:24px;height:24px;flex:none;image-rendering:auto;}}
+.text{{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}}
+.label{{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+.label code{{font-family:"Cascadia Code",Consolas,monospace;font-size:12.5px;
+  background:rgba(255,255,255,0.12);padding:1px 5px;border-radius:5px;}}
+.label b{{font-weight:700;}} .label i{{font-style:italic;}}
+.meta{{display:flex;align-items:center;gap:8px;font-size:11px;}}
+.meta .who{{color:#FFD79A;font-weight:600;}}
+.meta .fmt{{color:rgba(235,235,245,0.45);text-transform:uppercase;letter-spacing:0.4px;}}
 .empty{{padding:20px;text-align:center;color:rgba(235,235,245,0.5);}}
 {anim}
 </style></head><body><div class="wrap">
 <div class="head"><span class="e">📋</span><span class="h">Senaste clips</span>
-<span class="hint">Ctrl+§ nästa • Enter välj • Esc stäng</span></div>
+<span class="hint">↑ ↓ välj • Enter kopiera • Esc stäng</span></div>
 {rows}
-</div></body></html>"#,
+</div>
+<script>
+// Move the highlight WITHOUT reloading the document (reloading caused a visible
+// flash on every arrow press). The Rust side calls window.sel(i) on navigation.
+window.sel = function(i) {{
+  var rows = document.querySelectorAll('.row');
+  for (var r = 0; r < rows.length; r++) {{
+    var on = String(r) === String(i);
+    rows[r].classList.toggle('active', on);
+    if (on && rows[r].scrollIntoView) rows[r].scrollIntoView({{block:'nearest'}});
+  }}
+}};
+</script>
+</body></html>"#,
         base = BASE_CSS,
         anim = ANIM_CSS,
         rows = rows,
@@ -210,15 +275,27 @@ const ICON_SLACK: &str = include_str!("icon_slack.b64");
 const ICON_MURAL: &str = include_str!("icon_mural.b64");
 const ICON_IMAGE: &str = include_str!("icon_image.b64");
 const ICON_PROMPT: &str = include_str!("icon_prompt.b64");
+const ICON_TEAMS: &str = include_str!("icon_teams.b64");
+const ICON_OUTLOOK: &str = include_str!("icon_outlook.b64");
+const ICON_CONSOLE: &str = include_str!("icon_console.b64");
+const ICON_FIGMA: &str = include_str!("icon_figma.b64");
+const ICON_URL: &str = include_str!("icon_url.b64");
+const ICON_PLAIN: &str = include_str!("icon_plain.b64");
 
 /// Pick the embedded FatCow icon for a clip's type label (case-insensitive).
-/// Unknown / Normal / Vanilla fall back to the clipboard glyph.
+/// Unknown falls back to the clipboard glyph.
 fn icon_for(type_label: &str) -> &'static str {
     match type_label.trim().to_ascii_lowercase().as_str() {
         "slack" => ICON_SLACK,
-        "mural" => ICON_MURAL,
+        "mural" | "mural-widgets" => ICON_MURAL,
         "image" | "bild" => ICON_IMAGE,
         "prompt" => ICON_PROMPT,
+        "teams" | "html" => ICON_TEAMS,
+        "outlook" | "email" | "mail" => ICON_OUTLOOK,
+        "console" => ICON_CONSOLE,
+        "figma" => ICON_FIGMA,
+        "url" | "link" => ICON_URL,
+        "plain" | "normal" | "vanilla" | "text" => ICON_PLAIN,
         _ => ICON_CLIP,
     }
 }
