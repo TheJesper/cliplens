@@ -22,7 +22,7 @@
  * never touches other servers/skills. Safe to re-run after every git pull.
  */
 import {
-  readFileSync, writeFileSync, existsSync, mkdirSync, statSync,
+  readFileSync, writeFileSync, existsSync, mkdirSync, statSync, copyFileSync, renameSync,
 } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -65,7 +65,46 @@ function ensureDir(file) {
 
 function readJson(file) {
   if (!existsSync(file)) return {};
-  try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return {}; }
+  const raw = readFileSync(file, 'utf8');
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    // CRITICAL: do NOT silently treat a malformed config as empty — that would
+    // overwrite the user's real servers with just ours. Abort loudly instead.
+    throw new Error(
+      `Refusing to touch ${file}: it exists but is not valid JSON (${e.message}). ` +
+      `Fix or remove it, then re-run. Your servers were left untouched.`
+    );
+  }
+}
+
+/**
+ * Write a file SAFELY: back up the existing file to <file>.bak, write to a temp
+ * file, then atomically rename it into place. On JSON targets, validate the
+ * temp file parses before the rename; if anything fails, restore the backup so
+ * the user's config is never left half-written or clobbered.
+ */
+function safeWriteFile(file, contents, { validateJson = false } = {}) {
+  ensureDir(file);
+  const bak = `${file}.bak`;
+  const tmp = `${file}.tmp-${process.pid}`;
+  const had = existsSync(file);
+  if (had) {
+    try { copyFileSync(file, bak); } catch { /* best-effort backup */ }
+  }
+  try {
+    writeFileSync(tmp, contents, 'utf8');
+    if (validateJson) JSON.parse(readFileSync(tmp, 'utf8')); // must parse
+    renameSync(tmp, file); // atomic on same volume
+  } catch (e) {
+    // Clean up temp, restore original from backup if we clobbered anything.
+    try { if (existsSync(tmp)) writeFileSync(tmp, ''); } catch { /* ignore */ }
+    if (had && existsSync(bak)) {
+      try { copyFileSync(bak, file); } catch { /* ignore */ }
+    }
+    throw new Error(`Safe write failed for ${file} (${e.message}); original restored.`);
+  }
 }
 
 // ---- MCP writers (one per format) -----------------------------------------
@@ -78,7 +117,7 @@ function writeMcpJson(file, key) {
     ? { type: 'stdio', ...entry }
     : entry;
   ensureDir(file);
-  if (!DRY) writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+  if (!DRY) safeWriteFile(file, JSON.stringify(cfg, null, 2) + '\n', { validateJson: true });
   changes.push(`MCP  → ${file} (${key}.${SERVER_NAME})`);
 }
 
@@ -99,7 +138,7 @@ function writeMcpToml(file) {
     out = block;
   }
   ensureDir(file);
-  if (!DRY) writeFileSync(file, out, 'utf8');
+  if (!DRY) safeWriteFile(file, out); // TOML — no JSON validation, but still backed up + atomic
   changes.push(`MCP  → ${file} ([mcp_servers.${SERVER_NAME}])`);
 }
 
