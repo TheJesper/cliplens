@@ -26,7 +26,7 @@ import { parseFigmaText } from './lenses/figma.js';
 import { parseMuralHtml } from './lenses/mural.js';
 import { sendNotify } from './notify.js';
 import { appendHistory, latestByAgent, getById, clearHistory, historyEnabled } from './history.js';
-import { setState, clearStateKey, envFlag, readState } from './state.js';
+import { setState, clearStateKey, envFlag, readState, imageDir, shouldAskImageDir, configSummary } from './state.js';
 import { replay } from './replay.js';
 import { randomHint } from './hints.js';
 import { penImage } from './pens/image.js';
@@ -81,8 +81,10 @@ function decodeEntities(s) {
 }
 
 /**
- * Save the clipboard image (if any) to tmp/clip-image.png. Shared by
- * cliplens_save_image and cliplens_analyze so both behave identically.
+ * Save the clipboard image (if any) to the OS temp dir as
+ * cliplens-clip-image.png (cross-platform, outside the repo — user data must
+ * never land in a cloned repo). Shared by cliplens_save_image and
+ * cliplens_analyze so both behave identically.
  *
  * @param {object} [opts]
  * @param {boolean} [opts.reading] true when this is a READ of an existing clip
@@ -92,11 +94,16 @@ function decodeEntities(s) {
  * @returns {Promise<{path:string, dims:string}|null>} null when no image present.
  */
 async function saveClipImage({ reading = false, agent } = {}) {
-  const { writeFileSync, unlinkSync } = await import('fs');
+  const { writeFileSync, unlinkSync, mkdirSync, existsSync } = await import('fs');
   const { execSync } = await import('child_process');
   const { tmpdir } = await import('os');
   const { join } = await import('path');
-  const outPath = join(import.meta.dirname, '..', 'tmp', 'clip-image.png');
+  // Where to save is configurable (env CLIPLENS_IMAGE_DIR > local state.imageDir
+  // > OS temp dir). Cross-platform, and NEVER the repo — this is transient user
+  // clipboard data. The caller can toggle "ask me first" via state.askImageDir.
+  const dir = await imageDir();
+  try { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); } catch { /* fall through */ }
+  const outPath = join(dir, 'cliplens-clip-image.png');
   const ps = join(tmpdir(), 'save-clip-img.ps1');
   writeFileSync(ps, `
 Add-Type -AssemblyName System.Windows.Forms
@@ -126,7 +133,10 @@ if ($img) {
     subtitle: reading ? outPath : `${result} px`,
     agent: who,
   });
-  return { path: outPath, dims: result };
+  // If the user opted into being asked where images go AND hasn't set a folder
+  // yet, signal the agent to prompt them. Additive — callers can ignore it.
+  const askForDir = shouldAskImageDir() && !readState().imageDir && !process.env.CLIPLENS_IMAGE_DIR;
+  return { path: outPath, dims: result, askForDir };
 }
 
 /**
@@ -378,6 +388,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'cliplens_config',
+      description: "Read or set ClipLens local config (the central config hub in ~/.cliplens/state.json — LOCAL, never committed). Use to: show all settings (action=show), set where clip images are saved (key=imageDir value=<folder>), toggle whether the agent should ASK for the image folder (key=askImageDir value=on|off), or silence the cache reminder (key=remindCache value=off). More config keys (reminders etc.) will be added here over time. For the cache on/off switch prefer cliplens_cache.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['show', 'set', 'clear'], description: "show = list all config; set = set a key; clear = reset a key to default. Default: show." },
+          key: { type: 'string', description: "Config key for set/clear: imageDir | askImageDir | remindCache | history." },
+          value: { type: 'string', description: "Value for set. Booleans accept on/off/true/false; imageDir is a folder path." },
+        },
+      },
+    },
+    {
       name: 'cliplens_pen_image',
       description: "Put a real image on the clipboard (transparency preserved) so any app pastes it as an image — Mural, Slack, Teams, Word. Use for icons/screenshots/diagrams. Provide an absolute file path. FatCow icons: pass a name (e.g. 'save', 'folder') to auto-resolve from the FatCow set. After calling, tell the user to Ctrl+V.",
       inputSchema: {
@@ -510,7 +532,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!saved) {
         return { content: [{ type: 'text', text: 'No image in clipboard. Use cliplens_formats to check what formats are available.' }] };
       }
-      return { content: [{ type: 'text', text: `Image saved: ${saved.path} (${saved.dims} px). Use read_file to view it.` }] };
+      const ask = saved.askForDir
+        ? ' You have "ask me for the image folder" enabled but no folder is set — ask the user which folder to save clip images in, then call cliplens_config to store it.'
+        : '';
+      return { content: [{ type: 'text', text: `Image saved: ${saved.path} (${saved.dims} px). Use read_file to view it.${ask}` }] };
     }
 
     case 'cliplens_write_plaintext': {
@@ -602,7 +627,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // of empty raw-text. This is a READ, so the popup says "Image read".
         const saved = await saveClipImage({ reading: true });
         analysis = saved
-          ? { type: 'image', dimensions: saved.dims, savedPath: saved.path, hint: 'Use read_file on savedPath to view the image.' }
+          ? { type: 'image', dimensions: saved.dims, savedPath: saved.path, hint: 'Use read_file on savedPath to view the image.', ...(saved.askForDir ? { askForDir: true } : {}) }
           : { type: 'image', error: 'Image format present but could not be saved.' };
       } else if (detection.app === 'figma') {
         analysis = parseFigmaText(clipText);
@@ -763,6 +788,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const on = historyEnabled();
       const src = envOverride !== undefined ? 'env CLIPLENS_HISTORY' : (readState().history === true ? 'local toggle' : 'default');
       return { content: [{ type: 'text', text: `Clip cache is ${on ? 'ON' : 'OFF'} (source: ${src}). Turn ${on ? 'off with action=off' : 'on with action=on'}. Repo default is always OFF; the toggle is local only.` }] };
+    }
+
+    case 'cliplens_config': {
+      const a = args || {};
+      const action = (a.action || 'show').toLowerCase();
+      const boolKeys = new Set(['askImageDir', 'remindCache', 'history']);
+      const parseBool = (v) => {
+        const s = String(v).trim().toLowerCase();
+        return s === 'on' || s === '1' || s === 'true' || s === 'yes';
+      };
+
+      if (action === 'set') {
+        if (!a.key) return { content: [{ type: 'text', text: 'Provide `key` (imageDir | askImageDir | remindCache | history) and `value`.' }] };
+        const val = boolKeys.has(a.key) ? parseBool(a.value) : String(a.value ?? '');
+        setState(a.key, val);
+        return { content: [{ type: 'text', text: `✅ Set ${a.key} = ${JSON.stringify(val)} (local only, ~/.cliplens/state.json). Not committed.` }] };
+      }
+      if (action === 'clear') {
+        if (!a.key) return { content: [{ type: 'text', text: 'Provide `key` to reset to its default.' }] };
+        clearStateKey(a.key);
+        return { content: [{ type: 'text', text: `↩️ ${a.key} reset to default.` }] };
+      }
+      // show
+      const summary = configSummary();
+      const lines = Object.entries(summary).map(([k, v]) => `  ${k} = ${JSON.stringify(v.value)}  (${v.source})`);
+      const dir = await imageDir();
+      return { content: [{ type: 'text', text: `ClipLens config (local, ~/.cliplens/state.json — never committed):\n${lines.join('\n')}\n\nEffective image folder: ${dir}` }] };
     }
 
     case 'cliplens_pen_image': {

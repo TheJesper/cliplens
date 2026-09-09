@@ -74,6 +74,21 @@ The toggle is **local to the machine** (`~/.cliplens/state.json`) and is **never
 default is always OFF. When ON, clips live at most ~1h and auto-expire. To wipe immediately use
 `/clip clear` (`cliplens_clear`). An explicit `CLIPLENS_HISTORY` in mcp.json env overrides the toggle.
 
+### Local config (`cliplens_config`)
+
+`~/.cliplens/state.json` is the local, never-committed config hub. Use `cliplens_config`:
+
+| User says | Call |
+|-----------|------|
+| "show my cliplens settings" | `cliplens_config { action: "show" }` |
+| "save clip images in <folder>" | `cliplens_config { action: "set", key: "imageDir", value: "<folder>" }` |
+| "ask me where to save images" | `cliplens_config { action: "set", key: "askImageDir", value: "on" }` |
+| "stop reminding me about cache" | `cliplens_config { action: "set", key: "remindCache", value: "off" }` |
+
+Clip **images** save to the OS temp dir by default (cross-platform), NEVER into the repo. If
+`askImageDir` is on and no folder is set, `cliplens_analyze` / `cliplens_save_image` return
+`askForDir: true` — ask the user for a folder, then store it with `cliplens_config`.
+
 **Reclip is free and idempotent — don't verify first.** Each write returns a `clipId` (`clip_…`).
 When the user says "reclip", just call `cliplens_reclip { id }` (or with no id for the latest). It
 re-writes the *stored* payload exactly — no LLM, no regeneration. If that clip is already on the
