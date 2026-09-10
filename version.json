@@ -1,9 +1,10 @@
 {
   "name": "cliplens",
-  "version": "0.4.0",
-  "skillVersion": "4",
+  "version": "0.4.1",
+  "skillVersion": "5",
   "channel": "stable",
   "changelog": {
+    "0.4.1": "Fix slack/teams temp-file double-unlink (ENOENT) via finally. SKILL documents Figma clipboard structure (figmeta JSON + Kiwi data-buffer): text is readable, styles need Kiwi decode; no Figma pen.",
     "0.4.0": "Local config hub (cliplens_config): configurable image folder (OS temp default, never repo), ask-for-folder toggle, cache reminder toggle. Clip images no longer saved in the repo. Teams lens + link extraction + UTF-8 fix. Keyboard clip picker (arrows, sender+icons, no flash).",
     "0.3.0": "Runtime clip-cache toggle: cliplens_cache on|off|status. Local-only state (~/.cliplens/state.json), never committed, repo default OFF. Kiro skill install fixed to folder/SKILL.md.",
     "0.2.0": "Universal installer for all MCP clients + self-update version check. SKILL default = plaintext (vanilla), formatting opt-in.",

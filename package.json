@@ -1,6 +1,6 @@
 {
   "name": "cliplens",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "The complete, universal clipboard skill for any AI agent (any provider) - read/write native app clipboard formats (Slack, Mural, Figma, Outlook) with no API keys. Lenses read, pens write.",
   "type": "module",
   "bin": {

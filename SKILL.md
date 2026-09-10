@@ -47,6 +47,27 @@ Do NOT default to Slack/markdown. If unsure which format, use plain text and ask
 CLI fallback (if no MCP): `clipit` (Slack), `clipmail` (Outlook/Teams HTML), `clipconsole` (strip console
 noise), `clipmural` (Mural stickies/diagrams), `cliplens capture|inspect`.
 
+### Reading a Figma copy — what you can and can't get
+
+When the user copies from Figma, the clipboard `HTML Format` holds TWO base64 blobs:
+
+- `data-metadata="<!--(figmeta)...-->"` — small JSON: `fileKey`, `pasteID`, `editorType`,
+  `selectedNodeData` (node IDs). Easy to decode (base64 → JSON).
+- `data-buffer="<!--(figma)...-->"` — the large binary scene graph in Figma's **Kiwi** serialization
+  (can be ~1 MB). This is where the RICH data lives: font size, colors, x/y, spacing, icon/component names.
+
+What the figma lens reads TODAY: only the flat **plain-text** fallback — layer names + text content. That
+is enough for "what does this screen say / list the labels", but it does NOT include styles.
+
+To get font size, colors, icon names etc. you must **decode the Kiwi `data-buffer`** — there is no shortcut,
+those values are not in the plain text. Known caveats when building that:
+- `captureFormat('HTML Format')` can hit **ENOBUFS** on big Figma copies (the ~1 MB payload exceeds the
+  default exec buffer) — raise `maxBuffer` before relying on the HTML path.
+- Plain-text reads suffer **mojibake** (åäö → `�`) because Figma's string format comes back cp1252-decoded;
+  the same cp1252→UTF-8 fix used for HTML Format is needed on `captureText` too.
+- There is NO Figma **pen** (write): Figma's clipboard format is proprietary/versioned; the right way to
+  write to Figma is its Plugin/REST API, not the clipboard. Lens (read) only.
+
 **Org-specific formats** live in the user's gitignored `private-lenses/` + `private-pens/` and are
 auto-loaded — check `cliplens_analyze` output; don't hard-code company formats into the public core.
 
