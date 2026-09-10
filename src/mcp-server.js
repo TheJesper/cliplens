@@ -555,14 +555,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       writeFileSync(tmpMd, args.markdown, 'utf-8');
       try {
         execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
-        unlinkSync(tmpMd);
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'slack', agent });
         sendNotify({ kind: 'clip', format: 'Slack', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent });
         return { content: [{ type: 'text', text: withHint(`✅ Slack-formatted clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Slack.`) }] };
       } catch (e) {
-        unlinkSync(tmpMd);
         return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
+      } finally {
+        try { unlinkSync(tmpMd); } catch { /* already gone */ }
       }
     }
 
@@ -575,14 +575,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       writeFileSync(tmpMd, args.markdown, 'utf-8');
       try {
         execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
-        unlinkSync(tmpMd);
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'html', agent });
         sendNotify({ kind: 'clip', format: 'Teams', title: 'Teams-clip klar', subtitle: 'Ctrl+V i Teams', agent });
         return { content: [{ type: 'text', text: withHint(`✅ Teams/HTML clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Teams/Outlook/Docs.`) }] };
       } catch (e) {
-        unlinkSync(tmpMd);
         return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
+      } finally {
+        try { unlinkSync(tmpMd); } catch { /* already gone */ }
       }
     }
 

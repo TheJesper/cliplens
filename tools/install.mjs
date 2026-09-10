@@ -65,7 +65,10 @@ function ensureDir(file) {
 
 function readJson(file) {
   if (!existsSync(file)) return {};
-  const raw = readFileSync(file, 'utf8');
+  let raw = readFileSync(file, 'utf8');
+  // Strip a UTF-8 BOM if present — editors add it, Kiro reads it fine, and it
+  // must not make us treat a valid config as "malformed" (which would abort).
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
   if (!raw.trim()) return {};
   try {
     return JSON.parse(raw);
