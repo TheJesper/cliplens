@@ -35,6 +35,12 @@ import { drawDiagram } from './pens/draw.js';
 // Keep last capture in memory for inspect
 let lastSnapshot = null;
 
+/** Append an occasional discovery hint to a response text (25% of the time). */
+function withHint(text) {
+  const h = randomHint();
+  return h ? `${text}\n\n${h}` : text;
+}
+
 /**
  * Extract clickable links + a plain-text rendering from an HTML clipboard body.
  * Rich pastes (Teams/Outlook/wiki) put real <a href> links here that the plain
