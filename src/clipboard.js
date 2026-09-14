@@ -3,18 +3,40 @@
  * Captures all available clipboard formats and their data.
  */
 
-/** Capture clipboard as text (basic — for MVP) */
+/**
+ * Capture clipboard as text.
+ *
+ * ENCODING: do NOT pipe `Get-Clipboard` through stdout with encoding:'utf-8' --
+ * PowerShell writes stdout in the console code page (cp1252/OEM), so Node reading it
+ * as UTF-8 mangles å/ä/ö and — (the "tröskel"/mojibake bug). Instead read the real
+ * UTF-16 clipboard string via .NET, re-derive its UTF-8 bytes, base64 them, and let
+ * Node decode base64 -> utf-8 cleanly. Same proven bridge captureFormat() uses.
+ */
 export async function captureText() {
-  const { execSync } = await import('child_process');
-  const text = execSync('powershell -command "Get-Clipboard"', { encoding: 'utf-8' });
-  return text.trim();
+  return readClipboardStringAsUtf8(`[System.Windows.Forms.Clipboard]::GetText()`);
 }
 
-/** Capture clipboard HTML format */
+/** Capture clipboard HTML/text format (plain text flavour) */
 export async function captureHtml() {
+  return readClipboardStringAsUtf8(`[System.Windows.Forms.Clipboard]::GetText([System.Windows.Forms.TextDataFormat]::Text)`);
+}
+
+/**
+ * Read a .NET clipboard string and return it as a correct UTF-8 JS string.
+ * The string is UTF-8-encoded inside PowerShell, base64'd, and decoded by Node --
+ * so no console-code-page corruption can occur on the wire.
+ */
+async function readClipboardStringAsUtf8(getterExpr) {
   const { execSync } = await import('child_process');
-  const html = execSync('powershell -command "Get-Clipboard -Format Text"', { encoding: 'utf-8' });
-  return html;
+  const script = `
+    Add-Type -AssemblyName System.Windows.Forms
+    $s = ${getterExpr}
+    if ($null -eq $s) { '' } else {
+      [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($s))
+    }
+  `;
+  const b64 = execSync(`powershell -STA -command "${script.replace(/\n/g, '; ')}"`, { encoding: 'utf-8' }).trim();
+  return Buffer.from(b64, 'base64').toString('utf-8').trim();
 }
 
 /** List all clipboard formats available (Windows) */
