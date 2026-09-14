@@ -12,6 +12,7 @@
 import { captureSnapshot, listFormats, captureText, writeText } from './clipboard.js';
 import { sendNotify } from './notify.js';
 import { appendHistory } from './history.js';
+import { clipSound } from './state.js';
 import { readFileSync, writeFileSync } from 'fs';
 
 const args = process.argv.slice(2);
@@ -98,7 +99,7 @@ switch (cmd) {
     const agent = flag('agent') || process.env.CLIPLENS_AGENT || 'cliplens';
     const type = flag('type') || 'Vanilla';
     const clipId = appendHistory({ text, format: 'plain', agent });
-    sendNotify({ kind: 'clip', format: type, title: `${type}-clip klar`, subtitle: `${[...text].length} tecken · Ctrl+V`, agent });
+    sendNotify({ kind: 'clip', format: type, title: `${type}-clip klar`, subtitle: `${[...text].length} tecken · Ctrl+V`, agent, sound: clipSound() });
     console.log(`✅ ${[...text].length} tecken på clipboard (UTF-8) — ${agent} · ${type}${clipId ? ` · id=${clipId}` : ''}. Ctrl+V.`);
     break;
   }

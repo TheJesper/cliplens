@@ -114,6 +114,8 @@ default is always OFF. When ON, clips live at most ~1h and auto-expire. To wipe 
 | "save clip images in <folder>" | `cliplens_config { action: "set", key: "imageDir", value: "<folder>" }` |
 | "ask me where to save images" | `cliplens_config { action: "set", key: "askImageDir", value: "on" }` |
 | "stop reminding me about cache" | `cliplens_config { action: "set", key: "remindCache", value: "off" }` |
+| "clip sound off" / "make it silent" | `cliplens_config { action: "set", key: "clipSound", value: "off" }` |
+| "clip sound on" / "use the success sound" | `cliplens_config { action: "set", key: "clipSound", value: "success" }` |
 
 Clip **images** save to the OS temp dir by default (cross-platform), NEVER into the repo. If
 `askImageDir` is on and no folder is set, `cliplens_analyze` / `cliplens_save_image` return

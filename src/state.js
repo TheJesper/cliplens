@@ -37,6 +37,7 @@ export const CONFIG_KEYS = {
   imageDir:    { kind: 'string', default: null,  env: 'CLIPLENS_IMAGE_DIR' },
   askImageDir: { kind: 'bool',   default: false },
   remindCache: { kind: 'bool',   default: true },
+  clipSound:   { kind: 'string', default: 'success', env: 'CLIPLENS_CLIP_SOUND' },
 };
 
 export function stateDir() {
@@ -128,6 +129,20 @@ export function shouldAskImageDir() {
  */
 export function shouldRemindCache() {
   return readState().remindCache !== false; // default ON unless explicitly off
+}
+
+/**
+ * Sound to play on a clip write. Default 'success' (sound ON, consistent across
+ * every clip path — daemon and fallback). Set to 'off' to silence, or a named
+ * sound ('success'|'error'|'celebrate') / .wav path. Precedence: env
+ * CLIPLENS_CLIP_SOUND > local state.clipSound > default 'success'.
+ */
+export function clipSound() {
+  const env = process.env.CLIPLENS_CLIP_SOUND;
+  if (env && env.trim()) return env.trim();
+  const saved = readState().clipSound;
+  if (saved && String(saved).trim()) return String(saved).trim();
+  return 'success';
 }
 
 /**

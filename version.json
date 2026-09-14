@@ -1,9 +1,10 @@
 {
   "name": "cliplens",
-  "version": "0.5.0",
-  "skillVersion": "6",
+  "version": "0.6.0",
+  "skillVersion": "7",
   "channel": "stable",
   "changelog": {
+    "0.6.0": "Consistent clip sound (default ON): every clip write plays the same sound across all paths (MCP + CLI + pens), configurable via cliplens_config clipSound (success|error|celebrate|off) or CLIPLENS_CLIP_SOUND. build.rs bundles the sounds next to the daemon binary so named sounds always resolve.",
     "0.5.0": "cliplens_ping handshake — verify connection + running version without touching the clipboard (no more throwaway test clips). Sharpened plaintext-default rule: naming a destination (e.g. 'for Slack') is not naming a format; Slack/Teams are opt-in only.",
     "0.4.1": "Fix slack/teams temp-file double-unlink (ENOENT) via finally. SKILL documents Figma clipboard structure (figmeta JSON + Kiwi data-buffer): text is readable, styles need Kiwi decode; no Figma pen.",
     "0.4.0": "Local config hub (cliplens_config): configurable image folder (OS temp default, never repo), ask-for-folder toggle, cache reminder toggle. Clip images no longer saved in the repo. Teams lens + link extraction + UTF-8 fix. Keyboard clip picker (arrows, sender+icons, no flash).",

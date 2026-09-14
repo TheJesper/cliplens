@@ -26,7 +26,7 @@ import { parseFigmaText } from './lenses/figma.js';
 import { parseMuralHtml } from './lenses/mural.js';
 import { sendNotify } from './notify.js';
 import { appendHistory, latestByAgent, getById, clearHistory, historyEnabled } from './history.js';
-import { setState, clearStateKey, envFlag, readState, imageDir, shouldAskImageDir, configSummary } from './state.js';
+import { setState, clearStateKey, envFlag, readState, imageDir, shouldAskImageDir, configSummary, clipSound } from './state.js';
 import { replay } from './replay.js';
 import { randomHint } from './hints.js';
 import { penImage } from './pens/image.js';
@@ -400,7 +400,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'cliplens_config',
-      description: "Read or set ClipLens local config (the central config hub in ~/.cliplens/state.json — LOCAL, never committed). Use to: show all settings (action=show), set where clip images are saved (key=imageDir value=<folder>), toggle whether the agent should ASK for the image folder (key=askImageDir value=on|off), or silence the cache reminder (key=remindCache value=off). More config keys (reminders etc.) will be added here over time. For the cache on/off switch prefer cliplens_cache.",
+      description: "Read or set ClipLens local config (the central config hub in ~/.cliplens/state.json — LOCAL, never committed). Use to: show all settings (action=show), set where clip images are saved (key=imageDir value=<folder>), toggle whether the agent should ASK for the image folder (key=askImageDir value=on|off), set the clip sound (key=clipSound value=success|error|celebrate|off), or silence the cache reminder (key=remindCache value=off). More config keys (reminders etc.) will be added here over time. For the cache on/off switch prefer cliplens_cache.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -586,7 +586,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
       await writeText(args.text);
       const clipId = appendHistory({ text: args.text, format: 'plain', agent });
-      sendNotify({ kind: 'clip', format: 'Normal', title: 'Text klar', subtitle: `${args.text.length} tecken`, agent });
+      sendNotify({ kind: 'clip', format: 'Normal', title: 'Text klar', subtitle: `${args.text.length} tecken`, agent, sound: clipSound() });
       return { content: [{ type: 'text', text: withHint(`Written ${args.text.length} chars as PLAIN TEXT to clipboard. clipId=${clipId} (reclip with this id for the exact same clip). Note: no formatting — for Slack formatting use cliplens_write_slack.`) }] };
     }
 
@@ -601,7 +601,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'slack', agent });
-        sendNotify({ kind: 'clip', format: 'Slack', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent });
+        sendNotify({ kind: 'clip', format: 'Slack', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent, sound: clipSound() });
         return { content: [{ type: 'text', text: withHint(`✅ Slack-formatted clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Slack.`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
@@ -621,7 +621,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'html', agent });
-        sendNotify({ kind: 'clip', format: 'Teams', title: 'Teams-clip klar', subtitle: 'Ctrl+V i Teams', agent });
+        sendNotify({ kind: 'clip', format: 'Teams', title: 'Teams-clip klar', subtitle: 'Ctrl+V i Teams', agent, sound: clipSound() });
         return { content: [{ type: 'text', text: withHint(`✅ Teams/HTML clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Teams/Outlook/Docs.`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
@@ -887,7 +887,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         const agent = a.agent || process.env.CLIPLENS_AGENT || 'cliplens';
         penImage(imagePath, { record: true, agent });
-        sendNotify({ kind: 'info', emoji: '\u{1F5BC}\u{FE0F}', title: 'Bild klar', subtitle: 'Ctrl+V', agent });
+        sendNotify({ kind: 'clip', emoji: '\u{1F5BC}\u{FE0F}', format: 'Image', title: 'Bild klar', subtitle: 'Ctrl+V', agent, sound: clipSound() });
         return { content: [{ type: 'text', text: withHint(`🖼️ Image on clipboard (transparency preserved): ${imagePath}. Ctrl+V to paste (Mural/Slack/Teams/Word).`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Image pen error: ${e.message}` }] };
@@ -905,7 +905,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           { nodes: a.nodes, edges: a.edges || [], layout: a.layout || 'flow-lr' },
           { owner: process.env.CLIPLENS_MURAL_OWNER || undefined, agent, record: true }
         );
-        sendNotify({ kind: 'clip', emoji: '\u{1F5FA}\u{FE0F}', title: 'Diagram klart', subtitle: `${res.nodes} noder, ${res.edges} pilar • Ctrl+V`, agent });
+        sendNotify({ kind: 'clip', emoji: '\u{1F5FA}\u{FE0F}', format: 'Mural', title: 'Diagram klart', subtitle: `${res.nodes} noder, ${res.edges} pilar • Ctrl+V`, agent, sound: clipSound() });
         return { content: [{ type: 'text', text: withHint(`🗺️ Diagram on clipboard: ${res.nodes} nodes, ${res.edges} connectors (${res.count} widgets). Ctrl+V in Mural to paste as native shapes.`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Draw error: ${e.message}` }] };

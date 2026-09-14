@@ -44,14 +44,17 @@ function findDefaultSound() {
  * @param {string} [opts.message] - Toast title / tooltip text. Default 'Clip ready'.
  * @param {string} [opts.agent]   - Sending agent name, shown as the toast subtitle. Default 'cliplens'.
  */
-export function notify({ icon, sound = true, message = 'Clip ready', agent = 'cliplens' } = {}) {
+export function notify({ icon, sound = 'success', message = 'Clip ready', agent = 'cliplens' } = {}) {
   try {
     // Preferred path: the cross-platform cliplens-toast binary (tao + wry).
     // Built locally (not bundled) -- if absent we fall back to the OS-native path.
     const bin = findToastBinary();
     if (bin) {
       // Route legacy notify through the semantic path as a "clip" card.
-      sendNotify({ kind: 'clip', title: message, agent });
+      // Pass sound through so the CLI pens (clipit/clipmail) are audible too;
+      // a named sound ('success') or 'off' both work. `true` maps to 'success'.
+      const snd = sound === true ? 'success' : (sound === false ? 'off' : sound);
+      sendNotify({ kind: 'clip', title: message, agent, sound: snd });
       return;
     }
     if (IS_WIN) {
