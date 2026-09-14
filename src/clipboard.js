@@ -13,30 +13,39 @@
  * Node decode base64 -> utf-8 cleanly. Same proven bridge captureFormat() uses.
  */
 export async function captureText() {
-  return readClipboardStringAsUtf8(`[System.Windows.Forms.Clipboard]::GetText()`);
-}
-
-/** Capture clipboard HTML/text format (plain text flavour) */
-export async function captureHtml() {
-  return readClipboardStringAsUtf8(`[System.Windows.Forms.Clipboard]::GetText([System.Windows.Forms.TextDataFormat]::Text)`);
+  const s = await readClipboardStringAsUtf8(`[System.Windows.Forms.Clipboard]::GetText()`);
+  return s.trim();
 }
 
 /**
  * Read a .NET clipboard string and return it as a correct UTF-8 JS string.
  * The string is UTF-8-encoded inside PowerShell, base64'd, and decoded by Node --
- * so no console-code-page corruption can occur on the wire.
+ * so no console-code-page corruption can occur on the wire. Returns the string
+ * verbatim (no trim) so callers decide whether to trim.
+ *
+ * The PowerShell runs from a temp .ps1 via -File (never -Command "..."), so no
+ * script content is ever interpolated into a cmd.exe command line — matching the
+ * injection-safe pattern used across the codebase.
  */
 async function readClipboardStringAsUtf8(getterExpr) {
   const { execSync } = await import('child_process');
-  const script = `
-    Add-Type -AssemblyName System.Windows.Forms
-    $s = ${getterExpr}
-    if ($null -eq $s) { '' } else {
-      [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($s))
-    }
-  `;
-  const b64 = execSync(`powershell -STA -command "${script.replace(/\n/g, '; ')}"`, { encoding: 'utf-8' }).trim();
-  return Buffer.from(b64, 'base64').toString('utf-8').trim();
+  const { writeFileSync, unlinkSync } = await import('fs');
+  const { tmpdir } = await import('os');
+  const { join } = await import('path');
+  const { randomUUID } = await import('crypto');
+  const ps = join(tmpdir(), `cliplens-read-${randomUUID()}.ps1`);
+  writeFileSync(ps, `Add-Type -AssemblyName System.Windows.Forms
+$s = ${getterExpr}
+if ($null -eq $s) { '' } else {
+  [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($s))
+}
+`, { encoding: 'utf-8', mode: 0o600 });
+  try {
+    const b64 = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8' }).trim();
+    return Buffer.from(b64, 'base64').toString('utf-8');
+  } finally {
+    try { unlinkSync(ps); } catch { /* already gone */ }
+  }
 }
 
 /** List all clipboard formats available (Windows) */
