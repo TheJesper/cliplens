@@ -284,6 +284,26 @@ Content teaches agents:
 - **Keep it short**: title <40 chars, one subtitle line.
 - **Sound is opt-in**: only pass `sound` if the user said they want audio.
 
+## 7b. Read vs write notifications (image reads must not say "clip ready")
+
+A notification must reflect what actually happened. A **read** (ClipLens LOOKING
+at what's already on the clipboard — e.g. saving a pasted image so the agent can
+see it) is NOT a new clip the user just created, and must never be styled or
+worded as one.
+
+Rules:
+- A **write** (a pen put something new on the clipboard) uses `kind: 'clip'` and
+  says it's ready to paste ("... klar", "Ctrl+V").
+- A **read** (image save, lens) uses `kind: 'info'` with a read-shaped title
+  ("Bild inläst" / "Image read") and shows the saved path as the subtitle. It
+  must NOT use `kind: 'clip'` and must NOT say "clip ready" / "Ctrl+V" — nothing
+  new was copied, so implying a fresh clip is wrong and confusing.
+- Callers pass an explicit `title`; the daemon's fallback title must stay neutral
+  (never "Clip ready") so a missing title can't mislabel a read as a write.
+
+Implemented via `saveClipImage({ reading })` in `mcp-server.js`:
+`reading:true` -> `kind:'info'`, title "Bild inläst", subtitle = saved path.
+
 ## 8. Non-goals
 
 - No markdown/rich text inside the toast (glanceability).

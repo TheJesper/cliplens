@@ -71,7 +71,9 @@ impl Default for NotifyRequest {
     fn default() -> Self {
         NotifyRequest {
             emoji: default_emoji(),
-            title: "Clip ready".to_string(),
+            // Neutral fallback: never "Clip ready" — a missing title must not
+            // mislabel a read (image save / lens) as a fresh clip write.
+            title: "ClipLens".to_string(),
             subtitle: String::new(),
             sound: String::new(),
             duration: default_duration(),
