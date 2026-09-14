@@ -16,6 +16,10 @@ want and you drive it:
 **Prefer the MCP tools** (registered as `cliplens` in the user's MCP config) — never shell out to PowerShell
 for the clipboard yourself:
 
+**Unsure if ClipLens is connected / running the latest code?** Call `cliplens_ping` — it returns the
+version, cache state and daemon status without touching the clipboard. Use it to verify; NEVER build a
+throwaway clip just to "test" that ClipLens works.
+
 | Intent | Tool |
 |--------|------|
 | What's on the clipboard? | `cliplens_analyze` (auto-detects source + applies the right lens) |
@@ -26,22 +30,27 @@ for the clipboard yourself:
 | **Write** Teams/Outlook/Docs rich text | `cliplens_write_teams` (markdown in → HTML Format on the clipboard) |
 | **Write** raw text | `cliplens_write_plaintext` |
 
-### Default: plain text. Formatting is opt-in.
+### Default: plain text (VANILLA). Formatting is opt-in.
 
-When the user says **/clip** or "put this on my clipboard" with NO format named, use
-`cliplens_write_plaintext` -- vanilla plain text, no markdown, no rich formatting. That is
-the safe default (pastes cleanly anywhere).
+**The default write is ALWAYS `cliplens_write_plaintext`.** When the user says /clip, "clip",
+"lägg clip", "put this on my clipboard", "copy this" with NO format explicitly named — use
+plaintext. Vanilla text, no markdown, no rich formatting. It pastes cleanly ANYWHERE
+(chat-to-chat, terminal, editor, and yes, Slack too).
 
-Only reach for a formatted pen when the user names the target explicitly:
+Reach for a formatted pen ONLY when the user explicitly names the target app:
 
 | User says | Use |
 |-----------|-----|
-| /clip · "copy this" · "clipboard" (no format) | `cliplens_write_plaintext` (DEFAULT) |
-| /clip slack · "for Slack" · "as a Slack message" | `cliplens_write_slack` |
-| /clip teams · /clip outlook · "for Teams/Outlook" | `clipmail` (HTML) |
-| /clip mural · "as Mural stickies" | `clipmural` |
+| /clip · "clip" · "lägg clip" · "copy this" · "clipboard" (no app named) | `cliplens_write_plaintext` (DEFAULT) |
+| "for Slack" · "as a Slack message" · /clip slack | `cliplens_write_slack` |
+| "for Teams/Outlook" · /clip teams | `cliplens_write_teams` |
+| "as Mural stickies" · /clip mural | `clipmural` |
 
-Do NOT default to Slack/markdown. If unsure which format, use plain text and ask.
+**Common mistake to avoid:** naming a destination like "for devkit" or "to paste to my
+colleague" is NOT naming a format — that is still plaintext. Only the words "Slack",
+"Teams", "Outlook", "Mural" (or /clip <fmt>) switch away from plaintext. Mentioning that
+the paste will END UP in Slack does not mean the clip should be Slack-formatted; when in
+doubt, plaintext + ask. **Never default to Slack/markdown.**
 
 
 CLI fallback (if no MCP): `clipit` (Slack), `clipmail` (Outlook/Teams HTML), `clipconsole` (strip console

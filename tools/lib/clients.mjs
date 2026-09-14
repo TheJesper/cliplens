@@ -147,6 +147,6 @@ export function mcpEntry(repoRoot) {
     command: 'node',
     args: [join(repoRoot, 'src', 'mcp-server.js')],
     env: {},
-    autoApprove: ['cliplens_text', 'cliplens_formats', 'cliplens_capture', 'cliplens_analyze'],
+    autoApprove: ['cliplens_ping', 'cliplens_text', 'cliplens_formats', 'cliplens_capture', 'cliplens_analyze'],
   };
 }

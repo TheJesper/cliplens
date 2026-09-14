@@ -250,6 +250,11 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
+      name: 'cliplens_ping',
+      description: "Lightweight health check / handshake — verify ClipLens is connected and see WHICH version is running, without touching the clipboard or building a test clip. Returns version, pid, cache state, daemon status and the available writers. Use this when unsure whether ClipLens works (e.g. after a restart) INSTEAD of writing a throwaway clip to 'test' it. Read-only, no side effects, safe to auto-approve.",
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
       name: 'cliplens_capture',
       description: 'Capture full clipboard snapshot (all formats). Returns format list with sizes and classifications. Use --app hint for better parsing.',
       inputSchema: {
@@ -310,7 +315,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'cliplens_write_slack',
-      description: 'Write FORMATTED text to clipboard for Slack paste. Converts markdown to native Slack rich text (Quill Delta). Use **bold**, *italic*, `code`, [link](url), :emoji:, - bullets, 1. numbered, ```code blocks```. After calling, tell user to Ctrl+V in Slack. Pass `agent` so /redo can recall this clip by sender.',
+      description: 'Write FORMATTED text to clipboard for Slack paste. Converts markdown to native Slack rich text (Quill Delta). ONLY use when the user EXPLICITLY says "Slack" / "as a Slack message" / /clip slack — do NOT use this just because the text will eventually be pasted into Slack. The default clip is cliplens_write_plaintext (vanilla); Slack formatting is opt-in. Use **bold**, *italic*, `code`, [link](url), :emoji:, - bullets, 1. numbered, ```code blocks```. After calling, tell user to Ctrl+V in Slack. Pass `agent` so /redo can recall this clip by sender.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -464,6 +469,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   switch (name) {
+    case 'cliplens_ping': {
+      const { readFileSync, existsSync } = await import('fs');
+      const { join, dirname } = await import('path');
+      const { fileURLToPath } = await import('url');
+      const here = dirname(fileURLToPath(import.meta.url));
+      let version = 'unknown';
+      try {
+        version = JSON.parse(readFileSync(join(here, '..', 'version.json'), 'utf8')).version || 'unknown';
+      } catch { /* no version.json */ }
+      // Is the toast daemon binary built? (presence, not a live ping — cheap.)
+      const isWin = process.platform === 'win32';
+      const daemonExe = isWin ? 'cliplens-daemon.exe' : 'cliplens-daemon';
+      const daemonBuilt = [
+        process.env.CLIPLENS_TOAST_BIN,
+        join(here, '..', 'cliplens-toast', 'target', 'release', daemonExe),
+        join(here, '..', 'cliplens-toast', 'target', 'debug', daemonExe),
+      ].filter(Boolean).some((p) => { try { return existsSync(p); } catch { return false; } });
+      const status = {
+        ok: true,
+        product: 'cliplens',
+        version,
+        pid: process.pid,
+        platform: process.platform,
+        node: process.version,
+        cache: historyEnabled() ? 'on' : 'off',
+        daemon: daemonBuilt ? 'built' : 'not-built',
+        writers: ['plaintext', 'slack', 'teams', 'mural', 'image', 'draw'],
+        lenses: ['analyze', 'figma', 'mural', 'outlook', 'console'],
+        defaultWriteFormat: 'plaintext',
+      };
+      return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
+    }
+
     case 'cliplens_capture': {
       const app = args?.app || 'unknown';
       lastSnapshot = await captureSnapshot(app);
