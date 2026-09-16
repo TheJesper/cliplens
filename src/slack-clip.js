@@ -133,6 +133,17 @@ function parseInline(text, parentAttrs, ops) {
   }
 }
 
+// Normalize Slack mrkdwn links → standard markdown so the converter understands them.
+// Agents often reach for Slack's own <url|label> / <url> syntax because the target IS Slack,
+// but this pen speaks standard markdown ([label](url)). Convert rather than emit literals.
+function normalizeSlackLinks(text) {
+  return text
+    // <url|label> → [label](url)
+    .replace(/<((?:https?|mailto):[^|>\s]+)\|([^>]+)>/g, '[$2]($1)')
+    // <url> (no label) → [url](url)
+    .replace(/<((?:https?|mailto):[^|>\s]+)>/g, '[$1]($1)');
+}
+
 // Sanitize AI-isms → natural human text
 function humanize(text) {
   return text
@@ -168,7 +179,7 @@ if (!text?.trim()) {
   process.exit(1);
 }
 
-text = humanize(text);
+text = humanize(normalizeSlackLinks(text));
 
 const delta = textToDelta(text);
 const deltaJson = JSON.stringify(delta);
