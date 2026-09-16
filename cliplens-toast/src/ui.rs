@@ -281,11 +281,13 @@ const ICON_CONSOLE: &str = include_str!("icon_console.b64");
 const ICON_FIGMA: &str = include_str!("icon_figma.b64");
 const ICON_URL: &str = include_str!("icon_url.b64");
 const ICON_PLAIN: &str = include_str!("icon_plain.b64");
+const ICON_READ: &str = include_str!("icon_read.b64");
 
 /// Pick the embedded FatCow icon for a clip's type label (case-insensitive).
 /// Unknown falls back to the clipboard glyph.
 fn icon_for(type_label: &str) -> &'static str {
     match type_label.trim().to_ascii_lowercase().as_str() {
+        "read" | "läst" | "lens" => ICON_READ,
         "slack" => ICON_SLACK,
         "mural" | "mural-widgets" => ICON_MURAL,
         "image" | "bild" => ICON_IMAGE,

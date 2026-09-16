@@ -1,9 +1,10 @@
 {
   "name": "cliplens",
-  "version": "0.6.0",
-  "skillVersion": "7",
+  "version": "0.7.0",
+  "skillVersion": "8",
   "channel": "stable",
   "changelog": {
+    "0.7.0": "Read receipts: reading the clipboard (analyze/text/lens) now fires a popup with a distinct magnifier icon, the reader agent and a short preview (never full content) — so you know ClipLens is done and the clipboard is free for the next copy. Slack pen auto-converts Slack mrkdwn links <url|label> to standard markdown.",
     "0.6.0": "Consistent clip sound (default ON): every clip write plays the same sound across all paths (MCP + CLI + pens), configurable via cliplens_config clipSound (success|error|celebrate|off) or CLIPLENS_CLIP_SOUND. build.rs bundles the sounds next to the daemon binary so named sounds always resolve.",
     "0.5.0": "cliplens_ping handshake — verify connection + running version without touching the clipboard (no more throwaway test clips). Sharpened plaintext-default rule: naming a destination (e.g. 'for Slack') is not naming a format; Slack/Teams are opt-in only.",
     "0.4.1": "Fix slack/teams temp-file double-unlink (ENOENT) via finally. SKILL documents Figma clipboard structure (figmeta JSON + Kiwi data-buffer): text is readable, styles need Kiwi decode; no Figma pen.",

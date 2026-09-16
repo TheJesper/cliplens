@@ -20,6 +20,11 @@ for the clipboard yourself:
 version, cache state and daemon status without touching the clipboard. Use it to verify; NEVER build a
 throwaway clip just to "test" that ClipLens works.
 
+**Read receipts.** Every READ (`cliplens_analyze` / `_text` / `_lens`) fires a desktop popup with a
+distinct magnifier icon, the reading agent and a short preview — so the user sees ClipLens is done and
+the clipboard is free for their next copy. Writes get the pen/format icon instead, so read vs write are
+visually distinct.
+
 | Intent | Tool |
 |--------|------|
 | What's on the clipboard? | `cliplens_analyze` (auto-detects source + applies the right lens) |
@@ -87,6 +92,14 @@ auto-loaded — check `cliplens_analyze` output; don't hard-code company formats
 2. **Humanize generated text.** ClipLens strips the machine tells automatically (em-dashes → hyphens, curly
    → straight quotes, zero-width spaces, BOM). Keep your tone plain and human; don't undo it with fancy
    punctuation.
+
+### Formatting is STANDARD MARKDOWN — not Slack mrkdwn
+
+The pens (`write_slack`, `write_teams`) convert **standard markdown**, not the target app's own
+markup. This trips agents up most with **links**: write `[label](url)`, NOT Slack's `<url|label>`.
+`<url|label>` used to paste as literal `<...>` text; the Slack pen now auto-converts it, but always
+prefer `[label](url)` so the same source works for Teams/plaintext too. Same for bold/italic — use
+`**bold**` / `*italic*`, never Slack's `*bold*` / `_italic_` convention.
 
 ## Clip cache / history (off by default) — `/cliplens cache on|off`
 

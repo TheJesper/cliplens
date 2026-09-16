@@ -42,6 +42,42 @@ function withHint(text) {
 }
 
 /**
+ * Short, safe preview for a notification: first few words + ellipsis. NEVER the
+ * whole content — a read notification is a "done, clipboard is free" receipt,
+ * not a place to leak the clip. Collapses whitespace, caps words and length.
+ */
+function previewWords(text, maxWords = 5, maxChars = 48) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  const words = clean.split(' ').slice(0, maxWords).join(' ');
+  const cut = words.length > maxChars ? words.slice(0, maxChars).trimEnd() : words;
+  const truncated = cut.length < clean.length;
+  return truncated ? `${cut}…` : cut;
+}
+
+/**
+ * Fire a READ notification: ClipLens just LOOKED at the clipboard (analyze /
+ * text / lens). This is the "I've read it, the clipboard is free for your next
+ * copy" receipt the user relies on. Distinct from a write:
+ *   - kind 'info' (not 'clip') + type label "Read"/"Läst" so the daemon shows
+ *     the READ icon (magnifier), visually different from a write (pen).
+ *   - title says it was read; subtitle = sender + a short preview (never full).
+ * Fire-and-forget; never throws.
+ */
+function notifyRead({ format = 'text', agent, preview = '' } = {}) {
+  const who = agent || process.env.CLIPLENS_AGENT || 'cliplens';
+  const label = format ? `Läst: ${format}` : 'Urklipp läst';
+  sendNotify({
+    kind: 'info',
+    format: 'Read',            // daemon maps this to the magnifier (read) icon
+    title: label,
+    subtitle: preview || 'urklippet är fritt för nästa',
+    agent: who,
+    sound: clipSound(),
+  });
+}
+
+/**
  * Extract clickable links + a plain-text rendering from an HTML clipboard body.
  * Rich pastes (Teams/Outlook/wiki) put real <a href> links here that the plain
  * text format loses. Returns { links:[{text,href}], text } — best-effort, never
@@ -315,11 +351,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'cliplens_write_slack',
-      description: 'Write FORMATTED text to clipboard for Slack paste. Converts markdown to native Slack rich text (Quill Delta). ONLY use when the user EXPLICITLY says "Slack" / "as a Slack message" / /clip slack — do NOT use this just because the text will eventually be pasted into Slack. The default clip is cliplens_write_plaintext (vanilla); Slack formatting is opt-in. Use **bold**, *italic*, `code`, [link](url), :emoji:, - bullets, 1. numbered, ```code blocks```. After calling, tell user to Ctrl+V in Slack. Pass `agent` so /redo can recall this clip by sender.',
+      description: 'Write FORMATTED text to clipboard for Slack paste. Converts markdown to native Slack rich text (Quill Delta). ONLY use when the user EXPLICITLY says "Slack" / "as a Slack message" / /clip slack — do NOT use this just because the text will eventually be pasted into Slack. The default clip is cliplens_write_plaintext (vanilla); Slack formatting is opt-in. Use STANDARD MARKDOWN: **bold**, *italic*, `code`, [label](url), :emoji:, - bullets, 1. numbered, ```code blocks```. LINKS: use markdown [label](url) — NOT Slack mrkdwn <url|label> (that renders as literal text). After calling, tell user to Ctrl+V in Slack. Pass `agent` so /redo can recall this clip by sender.',
       inputSchema: {
         type: 'object',
         properties: {
-          markdown: { type: 'string', description: 'Markdown-formatted text to convert to Slack rich text. Supports: **bold**, *italic*, `code`, [text](url), :emoji:, - bullets, 1. numbered lists, ```fenced code blocks```' },
+          markdown: { type: 'string', description: 'Markdown-formatted text to convert to Slack rich text. Supports: **bold**, *italic*, `code`, [label](url), :emoji:, - bullets, 1. numbered lists, ```fenced code blocks```. Links MUST be markdown [label](url); Slack mrkdwn <url|label> is auto-converted but prefer [label](url).' },
           agent: { type: 'string', description: "Sending agent name (e.g. 'pp', 'main'). Stored in history so cliplens_redo can recall this clip by sender. Falls back to CLIPLENS_AGENT env." },
         },
         required: ['markdown'],
@@ -518,6 +554,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     case 'cliplens_text': {
       const text = await captureText();
+      notifyRead({ format: 'Text', agent: args?.agent, preview: previewWords(text) });
       return { content: [{ type: 'text', text }] };
     }
 
@@ -554,6 +591,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (lens === 'figma') {
         const result = parseFigmaText(text);
+        notifyRead({ format: 'Figma', agent: args?.agent, preview: previewWords(text) });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
@@ -565,6 +603,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           html = Buffer.from(b64, 'base64').toString('utf-8');
         } catch { /* no HTML format */ }
         const parsed = parseMuralHtml(html);
+        notifyRead({ format: 'Mural', agent: args?.agent, preview: previewWords(text) });
         return { content: [{ type: 'text', text: JSON.stringify(parsed, null, 2) }] };
       }
 
@@ -690,6 +729,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Additive: attach links to any branch that lacks them (figma/mural/image).
       if (htmlInfo.links.length > 0 && analysis && analysis.links === undefined) {
         analysis.links = htmlInfo.links;
+      }
+
+      // Read receipt — "clipboard read, free for your next copy". The image
+      // branch already fired "Bild inläst" via saveClipImage; skip to avoid a
+      // double toast.
+      if (detection.app !== 'image') {
+        const fmtLabel = { figma: 'Figma', mural: 'Mural', teams: 'Teams' }[detection.app] || 'Text';
+        notifyRead({ format: fmtLabel, agent: args?.agent, preview: previewWords(htmlInfo.text || clipText) });
       }
 
       const result = {
