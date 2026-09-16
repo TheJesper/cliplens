@@ -125,18 +125,17 @@ export async function captureSnapshot(appHint) {
 /** Write text to clipboard (handles multiline + special chars safely) */
 export async function writeText(text) {
   const { execSync } = await import('child_process');
-  const { writeFileSync, unlinkSync } = await import('fs');
-  const { tmpdir } = await import('os');
-  const { join } = await import('path');
+  const { writeTmp, rmTmp } = await import('./tmp.js');
 
-  const tmpTxt = join(tmpdir(), 'cliplens-write.txt');
-  const tmpPs = join(tmpdir(), 'cliplens-write.ps1');
-  writeFileSync(tmpTxt, text, 'utf-8');
-  writeFileSync(tmpPs, `$text = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}')
+  const tmpTxt = writeTmp(text, '.txt');
+  const tmpPs = writeTmp(`$text = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}')
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Clipboard]::SetText($text)
-`);
-  execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
-  unlinkSync(tmpTxt);
-  unlinkSync(tmpPs);
+`, '.ps1');
+  try {
+    execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
+  } finally {
+    rmTmp(tmpTxt);
+    rmTmp(tmpPs);
+  }
 }

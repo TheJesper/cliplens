@@ -1,9 +1,10 @@
 {
   "name": "cliplens",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "skillVersion": "8",
   "channel": "stable",
   "changelog": {
+    "0.7.1": "Security hardening: all temp files now use crypto.randomUUID names + mode 0o600 via a shared src/tmp.js (was predictable fixed names — symlink/race risk). Covers clipboard.js, mcp-server.js, slack-clip.js, html-clip.js, pens/mural.js, pens/image.js. Clears the remaining item from the macOS security review.",
     "0.7.0": "Read receipts: reading the clipboard (analyze/text/lens) now fires a popup with a distinct magnifier icon, the reader agent and a short preview (never full content) — so you know ClipLens is done and the clipboard is free for the next copy. Slack pen auto-converts Slack mrkdwn links <url|label> to standard markdown.",
     "0.6.0": "Consistent clip sound (default ON): every clip write plays the same sound across all paths (MCP + CLI + pens), configurable via cliplens_config clipSound (success|error|celebrate|off) or CLIPLENS_CLIP_SOUND. build.rs bundles the sounds next to the daemon binary so named sounds always resolve.",
     "0.5.0": "cliplens_ping handshake — verify connection + running version without touching the clipboard (no more throwaway test clips). Sharpened plaintext-default rule: naming a destination (e.g. 'for Slack') is not naming a format; Slack/Teams are opt-in only.",

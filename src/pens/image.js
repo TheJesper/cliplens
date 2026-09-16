@@ -15,6 +15,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { writeFileSync, unlinkSync } from 'fs';
 import { appendHistory } from '../history.js';
+import { writeTmp, rmTmp } from '../tmp.js';
 
 /**
  * Write an image file to the clipboard preserving transparency. Standard
@@ -30,10 +31,8 @@ export function penImage(imagePath, { record = true, agent } = {}) {
   if (!existsSync(imagePath)) {
     throw new Error(`Image not found: ${imagePath}`);
   }
-  const tmpPs = join(tmpdir(), 'cliplens-img-pen.ps1');
   const p = imagePath.replace(/'/g, "''");
-  writeFileSync(
-    tmpPs,
+  const tmpPs = writeTmp(
     `Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $path = '${p}'
@@ -62,10 +61,14 @@ for ($i = 0; $i -lt 5; $i++) {
 }
 $bmp.Dispose()
 $png.Dispose()
-`
+`,
+    '.ps1'
   );
-  execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
-  unlinkSync(tmpPs);
+  try {
+    execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
+  } finally {
+    rmTmp(tmpPs);
+  }
   if (record) {
     appendHistory({ format: 'image', imagePath, agent: agent || process.env.CLIPLENS_AGENT || 'cliplens' });
   }

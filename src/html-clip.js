@@ -12,6 +12,7 @@ import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { notify } from './notify.js';
+import { writeTmp, rmTmp } from './tmp.js';
 
 /** Simple markdown -> HTML converter */
 function markdownToHtml(text) {
@@ -144,12 +145,9 @@ const plainText = text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/_/g, '')
 // Write to clipboard: HTML Format (UTF-8 bytes) + UnicodeText plaintext.
 // CRITICAL: HTML Format must be written as raw UTF-8 BYTES, not a PowerShell string,
 // or emojis and non-ASCII get mangled to Latin-1 (the ðŸ¤– bug).
-const tmpHtml = join(tmpdir(), 'clipmail.html');
-const tmpTxt = join(tmpdir(), 'clipmail.txt');
-const tmpPs = join(tmpdir(), 'clipmail.ps1');
-writeFileSync(tmpHtml, Buffer.from(htmlFormat, 'utf-8'));
-writeFileSync(tmpTxt, plainText, 'utf-8');
-writeFileSync(tmpPs, `
+const tmpHtml = writeTmp(Buffer.from(htmlFormat, 'utf-8'), '.html');
+const tmpTxt = writeTmp(plainText, '.txt');
+const tmpPs = writeTmp(`
 Add-Type -AssemblyName System.Windows.Forms
 $htmlBytes = [System.IO.File]::ReadAllBytes('${tmpHtml.replace(/\\/g, '\\\\')}')
 $plainText = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}', [System.Text.Encoding]::UTF8)
@@ -161,11 +159,11 @@ for ($i = 0; $i -lt 5; $i++) {
   try { [System.Windows.Forms.Clipboard]::SetDataObject($dataObj, $true); break }
   catch { Start-Sleep -Milliseconds 200 }
 }
-`);
+`, '.ps1');
 execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
-unlinkSync(tmpHtml);
-unlinkSync(tmpTxt);
-unlinkSync(tmpPs);
+rmTmp(tmpHtml);
+rmTmp(tmpTxt);
+rmTmp(tmpPs);
 
 const preview = plainText.substring(0, 120).replace(/\n/g, ' / ');
 console.log('');

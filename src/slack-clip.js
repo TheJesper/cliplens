@@ -12,6 +12,7 @@ import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { notify } from './notify.js';
+import { writeTmp, rmTmp } from './tmp.js';
 
 function encodeU16String(str) {
   const encoded = Buffer.from(str, 'utf16le');
@@ -186,12 +187,9 @@ const deltaJson = JSON.stringify(delta);
 const plainText = text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/\[(.+?)\]\(.+?\)/g, '$1');
 const payload = encodeCustomMime([['public.utf8-plain-text', plainText], ['slack/texty', deltaJson]]);
 
-const tmpBin = join(tmpdir(), 'slack-clip.bin');
-const tmpTxt = join(tmpdir(), 'slack-clip.txt');
-const tmpPs = join(tmpdir(), 'slack-clip.ps1');
-writeFileSync(tmpBin, payload);
-writeFileSync(tmpTxt, plainText, 'utf-8');
-writeFileSync(tmpPs, `
+const tmpBin = writeTmp(payload, '.bin');
+const tmpTxt = writeTmp(plainText, '.txt');
+const tmpPs = writeTmp(`
 Add-Type -AssemblyName System.Windows.Forms
 $bytes = [System.IO.File]::ReadAllBytes('${tmpBin.replace(/\\/g, '\\\\')}')
 $plainText = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}')
@@ -203,11 +201,11 @@ for ($i = 0; $i -lt 5; $i++) {
   try { [System.Windows.Forms.Clipboard]::SetDataObject($dataObj, $true); break }
   catch { Start-Sleep -Milliseconds 200 }
 }
-`, 'utf-8');
+`, '.ps1');
 execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
-unlinkSync(tmpBin);
-unlinkSync(tmpTxt);
-unlinkSync(tmpPs);
+rmTmp(tmpBin);
+rmTmp(tmpTxt);
+rmTmp(tmpPs);
 
 // Preview what was formatted
 const preview = plainText.substring(0, 120).replace(/\n/g, ' ↵ ');

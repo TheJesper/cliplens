@@ -23,6 +23,7 @@ import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { appendHistory } from '../history.js';
+import { writeTmp, rmTmp } from '../tmp.js';
 
 function esc(s) {
   return String(s)
@@ -402,11 +403,8 @@ export function toCfHtml(fragment) {
  * Write an HTML Format payload to the Windows clipboard via PowerShell.
  */
 export function writeHtmlClipboard(cfHtml) {
-  const tmpTxt = join(tmpdir(), 'cliplens-mural.html');
-  const tmpPs = join(tmpdir(), 'cliplens-mural.ps1');
-  writeFileSync(tmpTxt, cfHtml, 'utf-8');
-  writeFileSync(
-    tmpPs,
+  const tmpTxt = writeTmp(cfHtml, '.html');
+  const tmpPs = writeTmp(
     `Add-Type -AssemblyName System.Windows.Forms
 $htmlBytes = [System.IO.File]::ReadAllBytes('${tmpTxt.replace(/\\/g, '\\\\')}')
 $ms = New-Object System.IO.MemoryStream(,$htmlBytes)
@@ -416,11 +414,15 @@ for ($i = 0; $i -lt 5; $i++) {
   try { [System.Windows.Forms.Clipboard]::SetDataObject($dataObj, $true); break }
   catch { Start-Sleep -Milliseconds 200 }
 }
-`
+`,
+    '.ps1'
   );
-  execSync(`pwsh -NoProfile -STA -ExecutionPolicy Bypass -File "${tmpPs}"`);
-  unlinkSync(tmpTxt);
-  unlinkSync(tmpPs);
+  try {
+    execSync(`pwsh -NoProfile -STA -ExecutionPolicy Bypass -File "${tmpPs}"`);
+  } finally {
+    rmTmp(tmpTxt);
+    rmTmp(tmpPs);
+  }
 }
 
 /**

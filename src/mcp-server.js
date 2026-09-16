@@ -136,18 +136,18 @@ function decodeEntities(s) {
  * @returns {Promise<{path:string, dims:string}|null>} null when no image present.
  */
 async function saveClipImage({ reading = false, agent } = {}) {
-  const { writeFileSync, unlinkSync, mkdirSync, existsSync } = await import('fs');
   const { execSync } = await import('child_process');
   const { tmpdir } = await import('os');
   const { join } = await import('path');
+  const { mkdirSync, existsSync } = await import('fs');
+  const { writeTmp, rmTmp } = await import('./tmp.js');
   // Where to save is configurable (env CLIPLENS_IMAGE_DIR > local state.imageDir
   // > OS temp dir). Cross-platform, and NEVER the repo — this is transient user
   // clipboard data. The caller can toggle "ask me first" via state.askImageDir.
   const dir = await imageDir();
   try { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); } catch { /* fall through */ }
   const outPath = join(dir, 'cliplens-clip-image.png');
-  const ps = join(tmpdir(), 'save-clip-img.ps1');
-  writeFileSync(ps, `
+  const ps = writeTmp(`
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $img = [System.Windows.Forms.Clipboard]::GetImage()
@@ -157,12 +157,12 @@ if ($img) {
 } else {
   Write-Host "NO_IMAGE"
 }
-`);
+`, '.ps1');
   let result;
   try {
     result = execSync(`powershell -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8' }).trim();
   } finally {
-    try { unlinkSync(ps); } catch { /* ignore */ }
+    rmTmp(ps);
   }
   if (result === 'NO_IMAGE' || !result) return null;
   const who = agent || process.env.CLIPLENS_AGENT || 'cliplens';
@@ -630,12 +630,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case 'cliplens_write_slack': {
-      const { writeFileSync, unlinkSync } = await import('fs');
       const { execSync } = await import('child_process');
-      const { tmpdir } = await import('os');
       const { join } = await import('path');
-      const tmpMd = join(tmpdir(), 'cliplens-slack.md');
-      writeFileSync(tmpMd, args.markdown, 'utf-8');
+      const { writeTmp, rmTmp } = await import('./tmp.js');
+      const tmpMd = writeTmp(args.markdown, '.md');
       try {
         execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
@@ -645,17 +643,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } catch (e) {
         return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
       } finally {
-        try { unlinkSync(tmpMd); } catch { /* already gone */ }
+        rmTmp(tmpMd);
       }
     }
 
     case 'cliplens_write_teams': {
-      const { writeFileSync, unlinkSync } = await import('fs');
       const { execSync } = await import('child_process');
-      const { tmpdir } = await import('os');
       const { join } = await import('path');
-      const tmpMd = join(tmpdir(), 'cliplens-teams.md');
-      writeFileSync(tmpMd, args.markdown, 'utf-8');
+      const { writeTmp, rmTmp } = await import('./tmp.js');
+      const tmpMd = writeTmp(args.markdown, '.md');
       try {
         execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
@@ -665,7 +661,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } catch (e) {
         return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
       } finally {
-        try { unlinkSync(tmpMd); } catch { /* already gone */ }
+        rmTmp(tmpMd);
       }
     }
 
@@ -805,23 +801,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!entry) {
         return { content: [{ type: 'text', text: 'No clip history yet — nothing to redo.' }] };
       }
-      const { writeFileSync, unlinkSync } = await import('fs');
       const { execSync } = await import('child_process');
-      const { tmpdir } = await import('os');
       const { join } = await import('path');
+      const { writeTmp, rmTmp } = await import('./tmp.js');
       const fmt = entry.format || 'plain';
       const who = entry.agent || 'unknown';
       try {
         if (fmt === 'slack') {
-          const tmpMd = join(tmpdir(), 'cliplens-redo-slack.md');
-          writeFileSync(tmpMd, entry.text, 'utf-8');
-          execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
-          unlinkSync(tmpMd);
+          const tmpMd = writeTmp(entry.text, '.md');
+          try { execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' }); } finally { rmTmp(tmpMd); }
         } else if (fmt === 'html') {
-          const tmpMd = join(tmpdir(), 'cliplens-redo-html.md');
-          writeFileSync(tmpMd, entry.text, 'utf-8');
-          execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
-          unlinkSync(tmpMd);
+          const tmpMd = writeTmp(entry.text, '.md');
+          try { execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' }); } finally { rmTmp(tmpMd); }
         } else {
           await writeText(entry.text);
         }
