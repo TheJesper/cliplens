@@ -1,20 +1,47 @@
 /**
- * Clipboard capture/write for Windows using PowerShell.
- * Captures all available clipboard formats and their data.
+ * Clipboard capture/write.
+ *
+ * Plaintext read/write is CROSS-PLATFORM (Windows via .NET/PowerShell, macOS via
+ * pbcopy/pbpaste, Linux via wl-copy/xclip/xsel). The RICH native-format capture
+ * (all clipboard formats, HTML/Slack/Mural blobs) is still Windows-only — it
+ * relies on the .NET clipboard API; other OSes get a clear "not supported yet"
+ * error there, while the common plaintext path just works everywhere.
  */
+import { platform } from 'os';
+
+const OS = platform();
+const IS_WIN = OS === 'win32';
+const IS_MAC = OS === 'darwin';
 
 /**
  * Capture clipboard as text.
  *
- * ENCODING: do NOT pipe `Get-Clipboard` through stdout with encoding:'utf-8' --
+ * ENCODING (Windows): do NOT pipe `Get-Clipboard` through stdout with encoding:'utf-8' --
  * PowerShell writes stdout in the console code page (cp1252/OEM), so Node reading it
  * as UTF-8 mangles å/ä/ö and — (the "tröskel"/mojibake bug). Instead read the real
  * UTF-16 clipboard string via .NET, re-derive its UTF-8 bytes, base64 them, and let
  * Node decode base64 -> utf-8 cleanly. Same proven bridge captureFormat() uses.
+ * macOS/Linux tools already emit UTF-8, so we read their stdout as UTF-8 directly.
  */
 export async function captureText() {
-  const s = await readClipboardStringAsUtf8(`[System.Windows.Forms.Clipboard]::GetText()`);
-  return s.trim();
+  if (IS_WIN) {
+    const s = await readClipboardStringAsUtf8(`[System.Windows.Forms.Clipboard]::GetText()`);
+    return s.trim();
+  }
+  const { spawnSync } = await import('child_process');
+  const chain = IS_MAC
+    ? [['pbpaste', []]]
+    : [['wl-paste', ['--no-newline']], ['xclip', ['-selection', 'clipboard', '-o']], ['xsel', ['--clipboard', '--output']]];
+  for (const [cmd, args] of chain) {
+    const r = spawnSync(cmd, args, { encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
+    if (r.error) continue; // tool not installed -> try the next
+    if (r.status === 0) return (r.stdout || '').replace(/\r\n/g, '\n').trimEnd();
+  }
+  throw new Error(
+    IS_MAC
+      ? 'Could not read clipboard (pbpaste failed).'
+      : 'Could not read clipboard. Install one of: wl-clipboard (Wayland), xclip, or xsel.'
+  );
 }
 
 /**
@@ -48,8 +75,9 @@ if ($null -eq $s) { '' } else {
   }
 }
 
-/** List all clipboard formats available (Windows) */
+/** List all clipboard formats available (Windows). Non-Windows: plaintext only. */
 export async function listFormats() {
+  if (!IS_WIN) return ['text/plain']; // rich-format enumeration is Windows-only
   const { execSync } = await import('child_process');
   // Use .NET to get all formats. Force an array so a single format doesn't
   // deserialize to a bare string (which callers would iterate char-by-char).
@@ -74,6 +102,14 @@ export async function listFormats() {
  * correctly. cp1252 round-trips genuine single-byte text loss-lessly too.
  */
 export async function captureFormat(formatName) {
+  if (!IS_WIN) {
+    // Only plaintext is portable; the rich .NET format blobs are Windows-only.
+    if (/plain|text/i.test(formatName)) {
+      const t = await captureText();
+      return Buffer.from(t, 'utf-8').toString('base64');
+    }
+    throw new Error(`Rich clipboard format "${formatName}" capture is Windows-only for now.`);
+  }
   const { execSync } = await import('child_process');
   const script = `
     Add-Type -AssemblyName System.Windows.Forms
@@ -122,8 +158,9 @@ export async function captureSnapshot(appHint) {
   return snapshot;
 }
 
-/** Write text to clipboard (handles multiline + special chars safely) */
+/** Write text to clipboard (handles multiline + special chars safely). Cross-platform. */
 export async function writeText(text) {
+  if (!IS_WIN) return writeTextPosix(text);
   const { execSync } = await import('child_process');
   const { writeTmp, rmTmp } = await import('./tmp.js');
 
@@ -138,4 +175,27 @@ Add-Type -AssemblyName System.Windows.Forms
     rmTmp(tmpTxt);
     rmTmp(tmpPs);
   }
+}
+
+/**
+ * macOS/Linux clipboard write. Feeds UTF-8 text on stdin so multiline + special
+ * chars (å ä ö, emoji) survive with no shell-escaping. Tries the platform tools
+ * in order and uses the first that is installed.
+ */
+async function writeTextPosix(text) {
+  const { spawnSync } = await import('child_process');
+  const buf = Buffer.from(text, 'utf-8');
+  const chain = IS_MAC
+    ? [['pbcopy', []]]
+    : [['wl-copy', []], ['xclip', ['-selection', 'clipboard']], ['xsel', ['--clipboard', '--input']]];
+  for (const [cmd, args] of chain) {
+    const r = spawnSync(cmd, args, { input: buf });
+    if (r.error) continue; // tool not installed -> try the next
+    if (r.status === 0) return;
+  }
+  throw new Error(
+    IS_MAC
+      ? 'Could not write clipboard (pbcopy failed).'
+      : 'Could not write clipboard. Install one of: wl-clipboard (Wayland), xclip, or xsel.'
+  );
 }

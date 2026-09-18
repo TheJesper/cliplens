@@ -63,9 +63,27 @@ native clipboard format  ──►  Ctrl+V into Slack / Mural / Outlook / …
 ```bash
 git clone https://github.com/TheJesper/cliplens
 cd cliplens
-npm install
-npm link          # global CLI aliases
+
+# One command — installs deps, links the global CLI, and wires ClipLens into
+# EVERY AI client it detects (Claude Code, Claude Desktop, Gemini, Codex,
+# Cursor, Windsurf, VS Code Copilot, Kiro). Re-run after every `git pull`.
+./install.sh          # macOS / Linux
+.\install.ps1         # Windows (PowerShell)
 ```
+
+Prefer to do it by hand, or only wire some clients?
+
+```bash
+npm install && npm link              # global CLI aliases only
+node tools/install.mjs --list        # show detected AI clients
+node tools/install.mjs               # wire them all (MCP + skill)
+node tools/install.mjs --only claude-code,gemini,codex
+node tools/install.mjs --dry-run     # preview, write nothing
+```
+
+The installer merges into each client's own config format (JSON `mcpServers` /
+`servers`, or Codex TOML `[mcp_servers]`) and drops a `SKILL.md` where the client
+looks for one. It backs up every file it touches and never removes other servers.
 
 ## <img src="assets/icons/application_osx_terminal.png" width="32" height="32" align="middle"> CLI
 
@@ -140,11 +158,21 @@ Drop a `.js` file exporting the lens/pen shape (see [`examples/`](examples/)); i
 
 ## <img src="assets/icons/computer.png" width="32" height="32" align="middle"> Platform
 
-**Windows-first.** Clipboard I/O currently uses PowerShell + `System.Windows.Forms`. The encoding/decoding
-logic is pure, cross-platform Node — only the small read/write shim needs porting.
+**Plaintext read/write works everywhere; rich native formats are Windows-first.**
 
-> Developed on [Kiro](https://kiro.dev); works with Claude Code and any MCP agent.
-> **Not yet validated on macOS or Linux** — if you're there, a clipboard shim PR would be hugely welcome. 🙏
+| Capability | Windows | macOS | Linux |
+|---|:---:|:---:|:---:|
+| Install + wire AI clients | ✅ | ✅ | ✅ |
+| Plaintext read / write (`cliplens text` / `write`, `_write_plaintext`) | ✅ | ✅ `pbcopy`/`pbpaste` | ✅ `wl-clipboard` / `xclip` / `xsel` |
+| Clip daemon toast (Rust) | ✅ | ✅ | ✅ |
+| Rich native formats (Slack / Mural / Outlook-HTML / all-format capture) | ✅ | ☐ | ☐ |
+
+On Linux, install a clipboard tool so read/write works: `sudo apt install wl-clipboard`
+(Wayland) or `xclip` / `xsel` (X11). macOS needs nothing extra.
+
+> Developed on [Kiro](https://kiro.dev); works with Claude Code, Gemini, Codex and any MCP agent.
+> The rich-format pens/lenses still lean on the .NET clipboard API — a macOS/Linux port of
+> those (via `osascript` / native clipboard formats) would be a hugely welcome PR. 🙏
 
 ## <img src="assets/icons/rocket.png" width="32" height="32" align="middle"> Roadmap — *being worked on as we speak*
 
