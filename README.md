@@ -95,7 +95,7 @@ looks for one. It backs up every file it touches and never removes other servers
 | `clipmail` | Markdown → HTML (Outlook / Teams / Docs) |
 | `clipconsole` | Read a pasted DevTools console dump, strip the noise (keep CORS / HTTP / `net::ERR_`) |
 | `clipmural` | Write native Mural stickies / diagrams |
-| `reclip` | Replay clipboard history |
+| `reclip` | Re-put the LAST clip on the clipboard, exactly (no regeneration). Needs cache ON. |
 
 > 💡 **Give your agent DevTools eyes.** In Chrome, right-click inside the console → **Copy console**, then
 > run `clipconsole` (or the `cliplens_analyze` tool). ClipLens strips **99%+ of the noise** — keeping the

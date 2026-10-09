@@ -50,6 +50,18 @@ Reach for a formatted pen ONLY when the user explicitly names the target app:
 | "for Slack" · "as a Slack message" · /clip slack | `cliplens_write_slack` |
 | "for Teams/Outlook" · /clip teams | `cliplens_write_teams` |
 | "as Mural stickies" · /clip mural | `clipmural` |
+| "clip caveman" · "clip agent" · "clip ai" · /clip caveman | caveman-rewrite → `cliplens_write_plaintext` |
+
+**`clip caveman` / `clip agent` / `clip ai` — agent-aimed caveman clip.** The payload is for
+ANOTHER AI AGENT, so compress it: ultra-dense, facts only, zero politeness. This is a LINGUISTIC
+rewrite the agent does (not a code transform), then written as **plaintext** (vanilla — caveman is
+plain text). Merge the house skills: **caveman** (drop articles/filler/hedging, fragments OK,
+`[thing] [action] [reason]. [next].`) + **datatext** (facts only — ids/versions/paths/counts/state,
+no voice) + plaintext pen. KEEP VERBATIM: code, CLI, API names, function/symbol names, file paths,
+commit-type keywords, exact error strings, ids/versions — caveman compresses prose, never the
+technical tokens. Shape: `TASK / STATE / WHERE / FACTS / NEXT`, drop empty lines, first line = the
+point. Levels: `lite` (keep sentences) · `full` (default) · `ultra` (abbreviate prose words only).
+Do NOT compress security warnings or irreversible-action confirmations. Full detail: `CAVEMAN-PEN.md`.
 
 **Common mistake to avoid:** naming a destination like "for devkit" or "to paste to my
 colleague" is NOT naming a format — that is still plaintext. Only the words "Slack",
@@ -140,6 +152,12 @@ re-writes the *stored* payload exactly — no LLM, no regeneration. If that clip
 clipboard, the reclip is a harmless no-op (same bytes). So never spend a tool call or tokens READING the
 clipboard to check whether it's "still there" — reclipping costs a cheap clipboard write, checking costs
 more. Just reclip.
+
+**Reclip needs cache ON** (see above) — it replays what *cliplens* stored, so only clips made with
+the cliplens write tools are reclippable. If cache is OFF there is nothing to replay: `cliplens_reclip`
+returns empty, so turn cache on (`cliplens_cache { action: "on" }`) the moment the user wants reclip to
+work. Clips written by any *external* script (not cliplens) are invisible to reclip — always clip through
+the cliplens tools if "reclip" should keep working.
 
 ## The clip daemon (popup)
 

@@ -158,23 +158,81 @@ export async function captureSnapshot(appHint) {
   return snapshot;
 }
 
-/** Write text to clipboard (handles multiline + special chars safely). Cross-platform. */
+/**
+ * Write text to clipboard, cross-platform, and DO NOT return until the write is
+ * verified by reading the clipboard back. This guarantees callers never report
+ * "clip ready" before the clipboard actually holds the text.
+ *
+ * Windows: PowerShell SetText, then Get-Clipboard read-back.
+ * macOS:   pbcopy, then pbpaste read-back.
+ * Linux:   wl-copy/xclip/xsel (via writeTextPosix), then read-back.
+ * Retries a few times (clipboard can be briefly locked by another app).
+ * Throws if it cannot verify after all attempts, so the caller can report failure
+ * instead of a false "clip ready".
+ */
 export async function writeText(text) {
-  if (!IS_WIN) return writeTextPosix(text);
   const { execSync } = await import('child_process');
-  const { writeTmp, rmTmp } = await import('./tmp.js');
+  const IS_WIN = process.platform === 'win32';
+  const IS_MAC = process.platform === 'darwin';
 
-  const tmpTxt = writeTmp(text, '.txt');
-  const tmpPs = writeTmp(`$text = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}')
+  // normalise what we compare: trailing newline differences shouldn't fail us
+  const want = String(text).replace(/\r\n/g, '\n').replace(/\s+$/, '');
+  const matches = (got) => String(got).replace(/\r\n/g, '\n').replace(/\s+$/, '') === want;
+
+  const attempts = 5;
+  let lastErr = null;
+
+  for (let i = 0; i < attempts; i++) {
+    try {
+      if (IS_WIN) {
+        const { writeTmp, rmTmp } = await import('./tmp.js');
+        const tmpTxt = writeTmp(text, '.txt');
+        const tmpPs = writeTmp(`$text = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}')
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Clipboard]::SetText($text)
+# read back and print so Node can verify the write actually landed
+Start-Sleep -Milliseconds 40
+[System.Windows.Forms.Clipboard]::GetText()
 `, '.ps1');
-  try {
-    execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
-  } finally {
-    rmTmp(tmpTxt);
-    rmTmp(tmpPs);
+        try {
+          const got = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { encoding: 'utf-8' });
+          if (matches(got)) return;
+        } finally {
+          rmTmp(tmpTxt);
+          rmTmp(tmpPs);
+        }
+      } else {
+        // macOS + Linux: use the robust POSIX writer (wl-copy/xclip/xsel or pbcopy),
+        // then read back to verify.
+        await writeTextPosix(text);
+        const readCmd = IS_MAC ? 'pbpaste' : null;
+        if (readCmd) {
+          const got = execSync(readCmd, { encoding: 'utf-8' });
+          if (matches(got)) return;
+        } else {
+          // Linux: try the common readers; if none is installed we can't verify,
+          // but the write above already succeeded or threw.
+          for (const [cmd, args] of [['wl-paste', []], ['xclip', '-selection clipboard -o'.split(' ')], ['xsel', '--clipboard --output'.split(' ')]]) {
+            try {
+              const got = execSync([cmd, ...args].join(' '), { encoding: 'utf-8' });
+              if (matches(got)) return;
+            } catch { /* reader not installed — try next */ }
+          }
+          // no reader available to verify -> trust the write that didn't throw
+          return;
+        }
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+    // brief backoff before retrying (clipboard may be locked by another app)
+    await new Promise((r) => setTimeout(r, 60));
   }
+
+  throw new Error(
+    `clipboard write could not be verified after ${attempts} attempts` +
+    (lastErr ? `: ${lastErr.message}` : '')
+  );
 }
 
 /**

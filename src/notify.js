@@ -203,7 +203,7 @@ $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\power
     const psFile = join(tmpdir(), `cliplens-toast-${Date.now()}.ps1`);
     writeFileSync(psFile, '﻿' + ps, 'utf-8');
     const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', psFile], {
-      detached: true, stdio: 'ignore',
+      detached: true, stdio: 'ignore', windowsHide: true,
     });
     child.unref();
     setTimeout(() => { try { unlinkSync(psFile); } catch {} }, 8000).unref?.();

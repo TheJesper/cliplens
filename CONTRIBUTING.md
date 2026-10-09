@@ -12,6 +12,8 @@ or internal system belongs in a **gitignored** location, never in a tracked file
 
 - Real clip payloads or board dumps (`*.clip`, `clips/`, `mural-catalog/`)
 - Company Jira keys (e.g. `ABCD-1234`), internal URLs, or internal hostnames
+- Real people's names (colleagues, meeting participants, authors) — use synthetic names (Alice, Bob) in all examples, tests and fixtures
+- Pasted meeting transcripts (Teams/Zoom/Meet) — they carry real participant names and internal discussion
 - Mural workspace ids, board numbers, owner ids (`u…` hashes)
 - Real email addresses or personal data
 - Private agent notes about what you're working on

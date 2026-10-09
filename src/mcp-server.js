@@ -24,9 +24,10 @@ import {
 import { captureSnapshot, captureText, listFormats, captureFormat, writeText } from './clipboard.js';
 import { parseFigmaText } from './lenses/figma.js';
 import { parseMuralHtml } from './lenses/mural.js';
+import { parseTranscript, renderBody } from './lenses/transcript.js';
 import { sendNotify } from './notify.js';
 import { appendHistory, latestByAgent, getById, clearHistory, historyEnabled } from './history.js';
-import { setState, clearStateKey, envFlag, readState, imageDir, shouldAskImageDir, configSummary, clipSound } from './state.js';
+import { setState, clearStateKey, envFlag, readState, imageDir, shouldAskImageDir, configSummary, clipSound, maxImageEdge } from './state.js';
 import { replay } from './replay.js';
 import { randomHint } from './hints.js';
 import { penImage } from './pens/image.js';
@@ -39,6 +40,29 @@ let lastSnapshot = null;
 function withHint(text) {
   const h = randomHint();
   return h ? `${text}\n\n${h}` : text;
+}
+
+/**
+ * Turn a failed rich-clip child-process error into a clean, actionable message
+ * instead of leaking a raw Node stack trace to the user. Detects the classic
+ * stale-MCP-process case (a missing temp file / ENOENT) and points at a restart.
+ * @param {string} kind  'Teams' or 'Slack'
+ * @param {Error}  e     the caught execSync error
+ */
+function teamsClipError(kind, e) {
+  const detail = (e && (e.stderr?.toString?.() || e.message) || '').trim();
+  // ENOENT on a temp .md file => the running MCP process is older than the code
+  // on disk (fixed temp-file naming was replaced by random names). A restart of
+  // the MCP server reloads the current code and fixes it.
+  if (/ENOENT|no such file/i.test(detail)) {
+    return `${kind} clip failed: the running ClipLens MCP server looks out of date ` +
+      `(it referenced a temp file that is no longer used). Restart/reconnect the ClipLens ` +
+      `MCP server to load the current code, then try again. As a fallback, use ` +
+      `cliplens_write_plaintext for an unformatted copy.`;
+  }
+  const short = detail.split('\n')[0].slice(0, 200) || 'unknown error';
+  return `${kind} clip failed: ${short}. You can fall back to cliplens_write_plaintext ` +
+    `for an unformatted copy, or restart the ClipLens MCP server if this persists.`;
 }
 
 /**
@@ -133,9 +157,13 @@ function decodeEntities(s) {
  *   (not a new copy) — the popup then says "Image read", so we don't imply the
  *   user just copied something new.
  * @param {string}  [opts.agent]
- * @returns {Promise<{path:string, dims:string}|null>} null when no image present.
+ * @param {boolean} [opts.full] true = save at FULL resolution (opt-in). Default
+ *   false = downscale to the safe max edge (state.maxImageEdge) so a huge image
+ *   never overflows the agent's context. The >8000px-frame → /rewind guard.
+ * @returns {Promise<{path:string, dims:string, originalDims:string, downscaled:boolean}|null>}
+ *   null when no image present.
  */
-async function saveClipImage({ reading = false, agent } = {}) {
+async function saveClipImage({ reading = false, agent, full = false } = {}) {
   const { execSync } = await import('child_process');
   const { tmpdir } = await import('os');
   const { join } = await import('path');
@@ -147,13 +175,35 @@ async function saveClipImage({ reading = false, agent } = {}) {
   const dir = await imageDir();
   try { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); } catch { /* fall through */ }
   const outPath = join(dir, 'cliplens-clip-image.png');
+  // Safe-by-default: cap the longest edge unless the caller opted into full res.
+  // 0/negative edge = no limit. The PS script downscales proportionally and
+  // reports "WxH|origW×origH" so we can tell the agent what it actually got.
+  const edge = full ? 0 : maxImageEdge();
+  const outPs = outPath.replace(/\\/g, '\\\\');
   const ps = writeTmp(`
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $img = [System.Windows.Forms.Clipboard]::GetImage()
 if ($img) {
-  $img.Save('${outPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)
-  Write-Host "$($img.Width)x$($img.Height)"
+  $ow = $img.Width; $oh = $img.Height
+  $edge = ${Number.isFinite(edge) ? edge : 0}
+  $longest = [Math]::Max($ow, $oh)
+  if ($edge -gt 0 -and $longest -gt $edge) {
+    $scale = $edge / $longest
+    $nw = [int][Math]::Round($ow * $scale)
+    $nh = [int][Math]::Round($oh * $scale)
+    $bmp = New-Object System.Drawing.Bitmap $nw, $nh
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.DrawImage($img, 0, 0, $nw, $nh)
+    $g.Dispose()
+    $bmp.Save('${outPs}', [System.Drawing.Imaging.ImageFormat]::Png)
+    $bmp.Dispose()
+    Write-Host "$($nw)x$($nh)|$($ow)x$($oh)"
+  } else {
+    $img.Save('${outPs}', [System.Drawing.Imaging.ImageFormat]::Png)
+    Write-Host "$($ow)x$($oh)|$($ow)x$($oh)"
+  }
 } else {
   Write-Host "NO_IMAGE"
 }
@@ -165,6 +215,11 @@ if ($img) {
     rmTmp(ps);
   }
   if (result === 'NO_IMAGE' || !result) return null;
+  // result = "savedW x savedH | origW x origH"
+  const [savedDims, origDims] = result.split('|');
+  const dims = (savedDims || result).trim();
+  const originalDims = (origDims || savedDims || result).trim();
+  const downscaled = dims !== originalDims;
   const who = agent || process.env.CLIPLENS_AGENT || 'cliplens';
   // A READ is not a new clip — say so, and never route it through the "clip"
   // kind (which the daemon styles as a fresh write). Show the saved path.
@@ -172,13 +227,13 @@ if ($img) {
     kind: 'info',
     emoji: '\u{1F5BC}\u{FE0F}',
     title: reading ? 'Bild inläst' : 'Bild hämtad',
-    subtitle: reading ? outPath : `${result} px`,
+    subtitle: reading ? outPath : (downscaled ? `${dims} px (av ${originalDims})` : `${dims} px`),
     agent: who,
   });
   // If the user opted into being asked where images go AND hasn't set a folder
   // yet, signal the agent to prompt them. Additive — callers can ignore it.
   const askForDir = shouldAskImageDir() && !readState().imageDir && !process.env.CLIPLENS_IMAGE_DIR;
-  return { path: outPath, dims: result, askForDir };
+  return { path: outPath, dims, originalDims, downscaled, askForDir };
 }
 
 /**
@@ -258,6 +313,29 @@ function detectClipSource(formats, text) {
     return { app: 'teams', confidence: 'high', signals };
   }
 
+  // Meeting transcript (Teams / Zoom / Meet) — the plain text carries a very
+  // specific signature: a "started transcription" header, long-form timestamps
+  // ("N minuter M sekunder" / "N minutes M seconds"), or a meeting-notes header.
+  // Detected here so cliplens_analyze routes it to the transcript lens (minify
+  // + anonymise) without the caller naming the lens.
+  if (text) {
+    const t = text;
+    const transcriptSignals = [
+      [/startade transkriptionen|started transcription/i, 'transcript:started'],
+      [/\btranscription\b|\btranskription/i, 'transcript:keyword'],
+      [/\bmeeting notes\b|m[oö]tesanteckningar/i, 'transcript:meeting-notes'],
+      [/\d+\s+(?:minuter|minutes?)\s+\d+\s+(?:sekunder|seconds?)/i, 'transcript:longform-timestamp'],
+      [/AI-genererat inneh|AI-generated content/i, 'transcript:ai-notice'],
+    ];
+    const matched = transcriptSignals.filter(([re]) => re.test(t)).map(([, s]) => s);
+    // Timestamp alone is weak; require it OR any two signals to avoid false hits.
+    const strong = matched.includes('transcript:started') || matched.includes('transcript:meeting-notes');
+    if (strong || matched.length >= 2) {
+      signals.push(...matched);
+      return { app: 'transcript', confidence: strong ? 'high' : 'medium', signals };
+    }
+  }
+
   // Figma heuristic: lots of repeated lines (layer names + text), UI terms
   if (text) {
     const lines = text.split('\n');
@@ -323,11 +401,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'cliplens_lens',
-      description: 'Apply a lens to current clipboard text to extract structured data. Available lenses: figma (UI spec extraction), mural (sticky note detection). Returns structured JSON.',
+      description: 'Apply a lens to current clipboard text to extract structured data. Available lenses: figma (UI spec extraction), mural (sticky note detection), transcript (minify a Teams/Zoom/Meet meeting transcript -- ~80% smaller, speaker names replaced with IDs, id->name legend returned separately/private). Returns structured JSON.',
       inputSchema: {
         type: 'object',
         properties: {
-          lens: { type: 'string', description: 'Lens to apply: figma, mural', enum: ['figma', 'mural'] },
+          lens: { type: 'string', description: 'Lens to apply: figma, mural, transcript', enum: ['figma', 'mural', 'transcript'] },
         },
         required: ['lens'],
       },
@@ -346,8 +424,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'cliplens_save_image',
-      description: 'Save clipboard image to a temp file and return the path. Use when clipboard contains a screenshot/image (formats: Bitmap, PNG, DeviceIndependentBitmap). Returns the file path so you can read_file on it.',
-      inputSchema: { type: 'object', properties: {} },
+      description: 'Save clipboard image to a temp file and return the path. Use when clipboard contains a screenshot/image (formats: Bitmap, PNG, DeviceIndependentBitmap). SAFE BY DEFAULT: a large image is downscaled to a safe max edge (config maxImageEdge, default 2000px) so reading it never overflows the agent context. Pass full:true to save at original resolution. Returns the file path so you can read_file on it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          full: { type: 'boolean', description: 'Save at ORIGINAL resolution (opt-in). Default false = downscale to the safe max edge so a huge image never blows up the context window.' },
+        },
+      },
     },
     {
       name: 'cliplens_write_slack',
@@ -532,7 +615,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         cache: historyEnabled() ? 'on' : 'off',
         daemon: daemonBuilt ? 'built' : 'not-built',
         writers: ['plaintext', 'slack', 'teams', 'mural', 'image', 'draw'],
-        lenses: ['analyze', 'figma', 'mural', 'outlook', 'console'],
+        lenses: ['analyze', 'figma', 'mural', 'transcript', 'outlook', 'console'],
         defaultWriteFormat: 'plaintext',
       };
       return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
@@ -607,23 +690,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(parsed, null, 2) }] };
       }
 
-      return { content: [{ type: 'text', text: `Unknown lens: ${lens}. Available: figma, mural` }] };
+      if (lens === 'transcript') {
+        // Minify a pasted meeting transcript (Teams/Zoom/Meet). Speaker names
+        // are replaced with IDs (S1, S2, ...). The body is anonymised (no real
+        // names); the id->name legend is returned SEPARATELY so it can be kept
+        // private and never shared by accident.
+        const parsed = parseTranscript(text);
+        const body = renderBody(parsed);
+        notifyRead({ format: 'Transcript', agent: args?.agent, preview: previewWords(text) });
+        const out = {
+          type: 'transcript',
+          body,                    // anonymised, IDs only — safe to share
+          legend: parsed.speakers, // id -> real name — PRIVATE, keep out of public places
+          stats: parsed.stats,
+        };
+        return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
+      }
+
+      return { content: [{ type: 'text', text: `Unknown lens: ${lens}. Available: figma, mural, transcript` }] };
     }
 
     case 'cliplens_save_image': {
-      const saved = await saveClipImage({ reading: false, agent: args?.agent });
+      const saved = await saveClipImage({ reading: false, agent: args?.agent, full: args?.full === true });
       if (!saved) {
         return { content: [{ type: 'text', text: 'No image in clipboard. Use cliplens_formats to check what formats are available.' }] };
       }
       const ask = saved.askForDir
         ? ' You have "ask me for the image folder" enabled but no folder is set — ask the user which folder to save clip images in, then call cliplens_config to store it.'
         : '';
-      return { content: [{ type: 'text', text: `Image saved: ${saved.path} (${saved.dims} px). Use read_file to view it.${ask}` }] };
+      const scaleNote = saved.downscaled
+        ? ` Downscaled to a safe size: ${saved.dims} px (original ${saved.originalDims} px). Pass full:true if you need original resolution.`
+        : '';
+      return { content: [{ type: 'text', text: `Image saved: ${saved.path} (${saved.dims} px).${scaleNote} Use read_file to view it.${ask}` }] };
     }
 
     case 'cliplens_write_plaintext': {
       const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
-      await writeText(args.text);
+      try {
+        await writeText(args.text);   // throws if the write can't be verified
+      } catch (e) {
+        // NEVER say "clip ready" if the clipboard write wasn't verified.
+        return { content: [{ type: 'text', text: `Clip FAILED: ${e.message}. Clipboard was not changed — nothing to paste.` }] };
+      }
       const clipId = appendHistory({ text: args.text, format: 'plain', agent });
       sendNotify({ kind: 'clip', format: 'Normal', title: 'Text klar', subtitle: `${args.text.length} tecken`, agent, sound: clipSound() });
       return { content: [{ type: 'text', text: withHint(`Written ${args.text.length} chars as PLAIN TEXT to clipboard. clipId=${clipId} (reclip with this id for the exact same clip). Note: no formatting — for Slack formatting use cliplens_write_slack.`) }] };
@@ -641,7 +749,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         sendNotify({ kind: 'clip', format: 'Slack', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent, sound: clipSound() });
         return { content: [{ type: 'text', text: withHint(`✅ Slack-formatted clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Slack.`) }] };
       } catch (e) {
-        return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
+        return { content: [{ type: 'text', text: teamsClipError('Slack', e) }] };
       } finally {
         rmTmp(tmpMd);
       }
@@ -659,7 +767,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         sendNotify({ kind: 'clip', format: 'Teams', title: 'Teams-clip klar', subtitle: 'Ctrl+V i Teams', agent, sound: clipSound() });
         return { content: [{ type: 'text', text: withHint(`✅ Teams/HTML clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Teams/Outlook/Docs.`) }] };
       } catch (e) {
-        return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
+        return { content: [{ type: 'text', text: teamsClipError('Teams', e) }] };
       } finally {
         rmTmp(tmpMd);
       }
@@ -706,7 +814,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // of empty raw-text. This is a READ, so the popup says "Image read".
         const saved = await saveClipImage({ reading: true });
         analysis = saved
-          ? { type: 'image', dimensions: saved.dims, savedPath: saved.path, hint: 'Use read_file on savedPath to view the image.', ...(saved.askForDir ? { askForDir: true } : {}) }
+          ? { type: 'image', dimensions: saved.dims, originalDimensions: saved.originalDims, downscaled: saved.downscaled, savedPath: saved.path, hint: saved.downscaled ? 'Downscaled to a safe size to protect context. Use read_file on savedPath; call cliplens_save_image {full:true} for original resolution.' : 'Use read_file on savedPath to view the image.', ...(saved.askForDir ? { askForDir: true } : {}) }
           : { type: 'image', error: 'Image format present but could not be saved.' };
       } else if (detection.app === 'figma') {
         analysis = parseFigmaText(clipText);

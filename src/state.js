@@ -38,6 +38,7 @@ export const CONFIG_KEYS = {
   askImageDir: { kind: 'bool',   default: false },
   remindCache: { kind: 'bool',   default: true },
   clipSound:   { kind: 'string', default: 'success', env: 'CLIPLENS_CLIP_SOUND' },
+  maxImageEdge:{ kind: 'number', default: 2000, env: 'CLIPLENS_MAX_IMAGE_EDGE' },
 };
 
 export function stateDir() {
@@ -143,6 +144,25 @@ export function clipSound() {
   const saved = readState().clipSound;
   if (saved && String(saved).trim()) return String(saved).trim();
   return 'success';
+}
+
+/**
+ * Safe-by-default max image edge (longest side, px) for clipboard images read
+ * by the agent. A huge screenshot (e.g. a >8000px design frame) read at full
+ * resolution can overflow an agent's context window and force a /rewind. So
+ * cliplens downscales to this edge BY DEFAULT; callers opt into full size
+ * explicitly (cliplens_save_image { full: true }). 0 or negative = no limit
+ * (full size). Precedence: env CLIPLENS_MAX_IMAGE_EDGE > local state > 2000.
+ */
+export function maxImageEdge() {
+  const env = process.env.CLIPLENS_MAX_IMAGE_EDGE;
+  if (env && String(env).trim()) {
+    const n = parseInt(String(env).trim(), 10);
+    if (Number.isFinite(n)) return n;
+  }
+  const saved = readState().maxImageEdge;
+  if (saved !== undefined && saved !== null && Number.isFinite(Number(saved))) return Number(saved);
+  return 2000;
 }
 
 /**

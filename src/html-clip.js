@@ -42,6 +42,19 @@ function markdownToHtml(text) {
       result.push(blocks[Number(bm[1])]);
       continue;
     }
+    // Heading (# .. ######) — must run before the paragraph fallback, or the
+    // markdown "##" leaks through as literal text (the Teams "##" bug).
+    const hm = line.match(/^(#{1,6})\s+(.*)$/);
+    if (hm) {
+      if (inList) { result.push(`</${inList}>`); inList = null; }
+      const level = hm[1].length;
+      // Inline HTML sizes so it renders in Outlook/Teams/Word (they ignore <h1> default margins oddly);
+      const sizes = { 1: '20px', 2: '17px', 3: '15px', 4: '14px', 5: '13px', 6: '12px' };
+      result.push(
+        `<div style="font-weight:700;font-size:${sizes[level]};margin:8px 0 4px 0">${processInline(hm[2])}</div>`
+      );
+      continue;
+    }
     // Blockquote
     if (/^>\s?/.test(line)) {
       if (inList) { result.push(`</${inList}>`); inList = null; }

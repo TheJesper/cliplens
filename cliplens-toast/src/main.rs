@@ -1,3 +1,8 @@
+// On Windows release builds, run as a GUI subsystem app so no console window
+// flashes up when the one-shot toast binary is spawned per notify. Debug keeps
+// the console for troubleshooting; no-op on macOS/Linux.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 // cliplens-daemon: cross-platform notification daemon + clip-history picker.
 //
 // Modes:
@@ -686,11 +691,15 @@ fn play_sound(sound: &str) {
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW (0x08000000) so PowerShell's WAV playback never flashes a console.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         // Use PowerShell's SoundPlayer for WAV (no extra deps).
         let p = path.to_string_lossy().replace('\'', "''");
         let script = format!("(New-Object Media.SoundPlayer '{}').PlaySync();", p);
         let _ = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn();
     }
     #[cfg(target_os = "macos")]
