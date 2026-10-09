@@ -18,22 +18,63 @@
  *   clipemail-read          # reads clipboard, writes summary
  *   node src/outlook-lens.js
  */
-import { execSync } from 'child_process';
-import { writeFileSync, mkdirSync } from 'fs';
+import { execSync, execFileSync } from 'child_process';
+import { writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
+import { tmpdir } from 'os';
+import crypto from 'crypto';
+
+const IS_MAC = process.platform === 'darwin';
 
 const SCRIPT_DIR = import.meta.dirname;
 const TMP_DIR = join(SCRIPT_DIR, '..', 'tmp');
 const OUTPUT_FILE = join(TMP_DIR, 'email-summary.txt');
 
-// --- Clipboard reading (PowerShell STA) ---
+// --- Clipboard reading (cross-platform) ---
 
 function readClipboardFormat(formatName) {
+  if (IS_MAC) {
+    // macOS: use Swift/NSPasteboard to read the clipboard format
+    try {
+      const formatMap = {
+        'UnicodeText': 'public.utf8-plain-text',
+        'Text': 'public.utf8-plain-text',
+        'HTML Format': 'public.html',
+        'Web Custom Format0': 'org.chromium.web-custom-data',
+        'application/x-openwebapp-dragdata': 'org.chromium.web-custom-data',
+      };
+      const uti = formatMap[formatName] || formatName;
+      const safeUti = String(uti).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\0/g, '');
+      const tmp = join(tmpdir(), `cliplens-outlook-${crypto.randomUUID()}.swift`);
+      writeFileSync(tmp, `
+import AppKit
+import Foundation
+let pb = NSPasteboard.general
+let type = NSPasteboard.PasteboardType(rawValue: "${safeUti}")
+if let data = pb.data(forType: type) {
+  let str = String(data: data, encoding: .utf8) ?? ""
+  print(str, terminator: "")
+} else {
+  print("FORMAT_NOT_FOUND", terminator: "")
+}
+`, { encoding: 'utf-8', mode: 0o600 });
+      try {
+        return execFileSync('swift', [tmp], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
+      } finally {
+        try { unlinkSync(tmp); } catch {}
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  // Windows: PowerShell STA
+  const safeFormat = String(formatName).replace(/'/g, "''").replace(/[\0\r\n]/g, '');
   const ps = `
 Add-Type -AssemblyName System.Windows.Forms
 $data = [System.Windows.Forms.Clipboard]::GetDataObject()
-if ($data -and $data.GetDataPresent('${formatName}')) {
-  $stream = $data.GetData('${formatName}')
+if ($data -and $data.GetDataPresent('${safeFormat}')) {
+  $stream = $data.GetData('${safeFormat}')
   if ($stream -is [System.IO.Stream]) {
     $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
     $text = $reader.ReadToEnd()
@@ -49,11 +90,17 @@ if ($data -and $data.GetDataPresent('${formatName}')) {
 }
 `;
   try {
-    const result = execSync(
-      `powershell -ExecutionPolicy Bypass -STA -Command "${ps.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
-      { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
-    ).trim();
-    return result;
+    const tmpPs = join(tmpdir(), `cliplens-outlook-${crypto.randomUUID()}.ps1`);
+    writeFileSync(tmpPs, '\uFEFF' + ps, { encoding: 'utf-8', mode: 0o600 });
+    try {
+      const result = execSync(
+        `powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`,
+        { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
+      ).trim();
+      return result;
+    } finally {
+      try { unlinkSync(tmpPs); } catch {}
+    }
   } catch (err) {
     return null;
   }

@@ -649,7 +649,43 @@ fn cursor_monitor_area(window: &Window) -> Option<(f64, f64, f64, f64)> {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+fn cursor_monitor_area(window: &Window) -> Option<(f64, f64, f64, f64)> {
+    use core_graphics::display::{CGDisplay, CGPoint};
+    use core_graphics::event::CGEvent;
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    // Get cursor position via CGEvent (most reliable, works even without
+    // Accessibility permissions).
+    let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
+    let event = CGEvent::new(source).ok()?;
+    let cursor: CGPoint = event.location();
+
+    // Find which display contains the cursor point.
+    let displays = CGDisplay::active_displays().ok()?;
+    let scale = window.scale_factor();
+
+    for id in displays {
+        let d = CGDisplay::new(id);
+        let bounds = d.bounds();
+        if cursor.x >= bounds.origin.x
+            && cursor.x < bounds.origin.x + bounds.size.width
+            && cursor.y >= bounds.origin.y
+            && cursor.y < bounds.origin.y + bounds.size.height
+        {
+            // CG coordinates are in points on modern macOS (post-Retina),
+            // and tao uses logical coordinates, so pass through directly.
+            let x = bounds.origin.x / scale;
+            let y = bounds.origin.y / scale;
+            let w = bounds.size.width / scale;
+            let h = bounds.size.height / scale;
+            return Some((x, y, w, h));
+        }
+    }
+    None
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn cursor_monitor_area(_window: &Window) -> Option<(f64, f64, f64, f64)> {
     None
 }

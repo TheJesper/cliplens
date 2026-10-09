@@ -75,8 +75,12 @@ if ($null -eq $s) { '' } else {
   }
 }
 
-/** List all clipboard formats available (Windows). Non-Windows: plaintext only. */
+/** List all clipboard formats available. */
 export async function listFormats() {
+  if (IS_MAC) {
+    const mac = await import('./clipboard-mac.js');
+    return mac.listFormats();
+  }
   if (!IS_WIN) return ['text/plain']; // rich-format enumeration is Windows-only
   const { execSync } = await import('child_process');
   // Use .NET to get all formats. Force an array so a single format doesn't
@@ -102,6 +106,10 @@ export async function listFormats() {
  * correctly. cp1252 round-trips genuine single-byte text loss-lessly too.
  */
 export async function captureFormat(formatName) {
+  if (IS_MAC) {
+    const mac = await import('./clipboard-mac.js');
+    return mac.captureFormat(formatName);
+  }
   if (!IS_WIN) {
     // Only plaintext is portable; the rich .NET format blobs are Windows-only.
     if (/plain|text/i.test(formatName)) {
@@ -127,8 +135,24 @@ export async function captureFormat(formatName) {
   return result.trim();
 }
 
+/** Capture clipboard HTML (the public.html type if available on macOS; Windows-only otherwise). */
+export async function captureHtml() {
+  if (IS_MAC) {
+    const mac = await import('./clipboard-mac.js');
+    return mac.captureHtml();
+  }
+  if (!IS_WIN) throw new Error('captureHtml() is not yet supported on this platform.');
+  // Windows: read 'HTML Format' via captureFormat and decode from base64
+  const b64 = await captureFormat('HTML Format');
+  return Buffer.from(b64, 'base64').toString('utf-8');
+}
+
 /** Capture full clipboard snapshot (all formats) */
 export async function captureSnapshot(appHint) {
+  if (IS_MAC) {
+    const mac = await import('./clipboard-mac.js');
+    return mac.captureSnapshot(appHint);
+  }
   const formats = await listFormats();
   const snapshot = {
     id: crypto.randomUUID(),

@@ -18,8 +18,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const outDir = join(__dirname, '..', 'tmp');
 mkdirSync(outDir, { recursive: true });
 
-// Get clipboard
-const raw = execSync('powershell -command "Get-Clipboard -Raw"', { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+// Get clipboard (cross-platform)
+let raw;
+if (process.platform === 'darwin') {
+  raw = execSync('pbpaste', { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+} else {
+  raw = execSync('powershell -command "Get-Clipboard -Raw"', { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+}
 
 if (process.argv.includes('--raw')) {
   writeFileSync(join(outDir, 'console-raw.txt'), raw, 'utf-8');

@@ -155,12 +155,18 @@ const html = markdownToHtml(text);
 const htmlFormat = buildHtmlFormat(html);
 const plainText = text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/_/g, '').replace(/`/g, '').replace(/\[(.+?)\]\(.+?\)/g, '$1').replace(/^>\s?/gm, '');
 
-// Write to clipboard: HTML Format (UTF-8 bytes) + UnicodeText plaintext.
-// CRITICAL: HTML Format must be written as raw UTF-8 BYTES, not a PowerShell string,
-// or emojis and non-ASCII get mangled to Latin-1 (the ðŸ¤– bug).
-const tmpHtml = writeTmp(Buffer.from(htmlFormat, 'utf-8'), '.html');
-const tmpTxt = writeTmp(plainText, '.txt');
-const tmpPs = writeTmp(`
+// Write to clipboard: HTML + plain text, platform-aware.
+if (process.platform === 'darwin') {
+  // macOS: use writeHtmlToClipboard from clipboard-mac.js
+  const { writeHtmlToClipboard } = await import('./clipboard-mac.js');
+  writeHtmlToClipboard(html, plainText);
+} else {
+  // Windows: HTML Format (UTF-8 bytes) + UnicodeText plaintext.
+  // CRITICAL: HTML Format must be written as raw UTF-8 BYTES, not a PowerShell string,
+  // or emojis and non-ASCII get mangled to Latin-1 (the ðŸ¤– bug).
+  const tmpHtml = writeTmp(Buffer.from(htmlFormat, 'utf-8'), '.html');
+  const tmpTxt = writeTmp(plainText, '.txt');
+  const tmpPs = writeTmp(`
 Add-Type -AssemblyName System.Windows.Forms
 $htmlBytes = [System.IO.File]::ReadAllBytes('${tmpHtml.replace(/\\/g, '\\\\')}')
 $plainText = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}', [System.Text.Encoding]::UTF8)
@@ -173,10 +179,11 @@ for ($i = 0; $i -lt 5; $i++) {
   catch { Start-Sleep -Milliseconds 200 }
 }
 `, '.ps1');
-execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
-rmTmp(tmpHtml);
-rmTmp(tmpTxt);
-rmTmp(tmpPs);
+  execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
+  rmTmp(tmpHtml);
+  rmTmp(tmpTxt);
+  rmTmp(tmpPs);
+}
 
 const preview = plainText.substring(0, 120).replace(/\n/g, ' / ');
 console.log('');

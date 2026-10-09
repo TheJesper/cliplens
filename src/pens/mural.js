@@ -25,6 +25,12 @@ import { join } from 'path';
 import { appendHistory } from '../history.js';
 import { writeTmp, rmTmp } from '../tmp.js';
 
+const IS_MAC = process.platform === 'darwin';
+let macClipboard;
+if (IS_MAC) {
+  macClipboard = await import('../clipboard-mac.js');
+}
+
 function esc(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -400,11 +406,18 @@ export function toCfHtml(fragment) {
 }
 
 /**
- * Write an HTML Format payload to the Windows clipboard via PowerShell.
+ * Write an HTML Format payload to the clipboard (cross-platform).
  */
 export function writeHtmlClipboard(cfHtml) {
-  const tmpTxt = writeTmp(cfHtml, '.html');
-  const tmpPs = writeTmp(
+  if (process.platform === 'darwin') {
+    // macOS: write as public.html via Swift/NSPasteboard
+    // clipboard-mac.js writeHtmlToClipboard is synchronous (uses execFileSync).
+    const { writeHtmlToClipboard } = macClipboard;
+    writeHtmlToClipboard(cfHtml);
+  } else {
+    // Windows: PowerShell
+    const tmpTxt = writeTmp(cfHtml, '.html');
+    const tmpPs = writeTmp(
     `Add-Type -AssemblyName System.Windows.Forms
 $htmlBytes = [System.IO.File]::ReadAllBytes('${tmpTxt.replace(/\\/g, '\\\\')}')
 $ms = New-Object System.IO.MemoryStream(,$htmlBytes)
@@ -422,6 +435,7 @@ for ($i = 0; $i -lt 5; $i++) {
   } finally {
     rmTmp(tmpTxt);
     rmTmp(tmpPs);
+  }
   }
 }
 

@@ -175,12 +175,20 @@ async function saveClipImage({ reading = false, agent, full = false } = {}) {
   const dir = await imageDir();
   try { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); } catch { /* fall through */ }
   const outPath = join(dir, 'cliplens-clip-image.png');
-  // Safe-by-default: cap the longest edge unless the caller opted into full res.
-  // 0/negative edge = no limit. The PS script downscales proportionally and
-  // reports "WxH|origW×origH" so we can tell the agent what it actually got.
-  const edge = full ? 0 : maxImageEdge();
-  const outPs = outPath.replace(/\\/g, '\\\\');
-  const ps = writeTmp(`
+  let result;
+  if (process.platform === 'darwin') {
+    // macOS: use the Swift-based saveClipboardImage from clipboard-mac.js
+    const { saveClipboardImage } = await import('./clipboard-mac.js');
+    const saved = saveClipboardImage(outPath);
+    if (!saved) return null;
+    result = saved.dims;
+  } else {
+    // Windows: PowerShell. Safe-by-default: cap the longest edge unless the caller
+    // opted into full res. 0/negative edge = no limit. The script downscales
+    // proportionally and reports "WxH|origW×origH" so we tell the agent what it got.
+    const edge = full ? 0 : maxImageEdge();
+    const outPs = outPath.replace(/\\/g, '\\\\');
+    const ps = writeTmp(`
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $img = [System.Windows.Forms.Clipboard]::GetImage()
@@ -208,14 +216,14 @@ if ($img) {
   Write-Host "NO_IMAGE"
 }
 `, '.ps1');
-  let result;
-  try {
-    result = execSync(`powershell -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8' }).trim();
-  } finally {
-    rmTmp(ps);
+    try {
+      result = execSync(`powershell -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8' }).trim();
+    } finally {
+      rmTmp(ps);
+    }
+    if (result === 'NO_IMAGE' || !result) return null;
   }
-  if (result === 'NO_IMAGE' || !result) return null;
-  // result = "savedW x savedH | origW x origH"
+  // result = "savedW x savedH | origW x origH" (Windows downscale); on macOS it's just "WxH".
   const [savedDims, origDims] = result.split('|');
   const dims = (savedDims || result).trim();
   const originalDims = (origDims || savedDims || result).trim();

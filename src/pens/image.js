@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Image Pen -- put a real image (PNG/etc.) on the Windows clipboard as a
- * bitmap, so any app (Mural, Slack, Teams, Word...) pastes it as an image.
+ * Image Pen -- put a real image (PNG/etc.) on the clipboard as a bitmap,
+ * so any app (Mural, Slack, Teams, Word...) pastes it as an image.
  *
  * This is NOT a Mural sticky -- it is a genuine clipboard image. Mural accepts
  * pasted images as image widgets. For icons (e.g. FatCow), point at the .png.
  *
  * Usage:
- *   node src/pens/image.js "C:\path\to\icon.png"
+ *   node src/pens/image.js "/path/to/icon.png"
  */
 import { existsSync } from 'fs';
 import { execSync } from 'child_process';
@@ -27,12 +27,19 @@ import { writeTmp, rmTmp } from '../tmp.js';
  * @param {boolean} [opts.record=true] - record to clip history (off during replay)
  * @param {string}  [opts.agent] - sender agent for history
  */
-export function penImage(imagePath, { record = true, agent } = {}) {
+export async function penImage(imagePath, { record = true, agent } = {}) {
   if (!existsSync(imagePath)) {
     throw new Error(`Image not found: ${imagePath}`);
   }
-  const p = imagePath.replace(/'/g, "''");
-  const tmpPs = writeTmp(
+
+  if (process.platform === 'darwin') {
+    // macOS: use Swift/NSPasteboard
+    const { writeImageToClipboard } = await import('../clipboard-mac.js');
+    writeImageToClipboard(imagePath);
+  } else {
+    // Windows: PowerShell
+    const p = imagePath.replace(/'/g, "''");
+    const tmpPs = writeTmp(
     `Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $path = '${p}'
@@ -69,6 +76,7 @@ $png.Dispose()
   } finally {
     rmTmp(tmpPs);
   }
+  }
   if (record) {
     appendHistory({ format: 'image', imagePath, agent: agent || process.env.CLIPLENS_AGENT || 'cliplens' });
   }
@@ -79,11 +87,11 @@ $png.Dispose()
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('pens/image.js')) {
   const imagePath = process.argv[2];
   if (!imagePath) {
-    console.error('Usage: node src/pens/image.js "C:\\path\\to\\icon.png"');
+    console.error('Usage: node src/pens/image.js "/path/to/icon.png"');
     process.exit(1);
   }
   try {
-    penImage(imagePath);
+    await penImage(imagePath);
     console.log(`🖼️  Image on clipboard: ${imagePath}. Ctrl+V to paste (Mural/Slack/Teams/Word).`);
   } catch (e) {
     console.error('Image pen error:', e.message);

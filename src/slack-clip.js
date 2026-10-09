@@ -187,9 +187,18 @@ const deltaJson = JSON.stringify(delta);
 const plainText = text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/\[(.+?)\]\(.+?\)/g, '$1');
 const payload = encodeCustomMime([['public.utf8-plain-text', plainText], ['slack/texty', deltaJson]]);
 
-const tmpBin = writeTmp(payload, '.bin');
-const tmpTxt = writeTmp(plainText, '.txt');
-const tmpPs = writeTmp(`
+if (process.platform === 'darwin') {
+  // macOS: use writeCustomFormats from clipboard-mac.js
+  const { writeCustomFormats } = await import('./clipboard-mac.js');
+  writeCustomFormats([
+    { type: 'Chromium Web Custom MIME Data Format', data: payload },
+    { type: 'UnicodeText', data: plainText },
+  ]);
+} else {
+  // Windows: PowerShell
+  const tmpBin = writeTmp(payload, '.bin');
+  const tmpTxt = writeTmp(plainText, '.txt');
+  const tmpPs = writeTmp(`
 Add-Type -AssemblyName System.Windows.Forms
 $bytes = [System.IO.File]::ReadAllBytes('${tmpBin.replace(/\\/g, '\\\\')}')
 $plainText = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}')
@@ -202,10 +211,11 @@ for ($i = 0; $i -lt 5; $i++) {
   catch { Start-Sleep -Milliseconds 200 }
 }
 `, '.ps1');
-execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
-rmTmp(tmpBin);
-rmTmp(tmpTxt);
-rmTmp(tmpPs);
+  execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
+  rmTmp(tmpBin);
+  rmTmp(tmpTxt);
+  rmTmp(tmpPs);
+}
 
 // Preview what was formatted
 const preview = plainText.substring(0, 120).replace(/\n/g, ' ↵ ');
