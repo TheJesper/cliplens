@@ -214,12 +214,21 @@ export async function writeText(text) {
         const tmpPs = writeTmp(`$text = [System.IO.File]::ReadAllText('${tmpTxt.replace(/\\/g, '\\\\')}')
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Clipboard]::SetText($text)
-# read back and print so Node can verify the write actually landed
+# read back and print so Node can verify the write actually landed.
+# IMPORTANT: base64 the UTF-8 bytes of the read-back instead of printing the raw
+# string. PowerShell writes stdout in the console code page (cp1252/OEM), so a raw
+# Get-Clipboard print mangles multibyte chars (å ä ö, —, ←, →) and the verify
+# compare would always fail for non-ASCII text even though the write succeeded.
+# This matches the base64 bridge readClipboardStringAsUtf8() uses on the read path.
 Start-Sleep -Milliseconds 40
-[System.Windows.Forms.Clipboard]::GetText()
+$rb = [System.Windows.Forms.Clipboard]::GetText()
+if ($null -eq $rb) { '' } else {
+  [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($rb))
+}
 `, '.ps1');
         try {
-          const got = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { encoding: 'utf-8' });
+          const b64 = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { encoding: 'utf-8' }).trim();
+          const got = Buffer.from(b64, 'base64').toString('utf-8');
           if (matches(got)) return;
         } finally {
           rmTmp(tmpTxt);
@@ -253,9 +262,30 @@ Start-Sleep -Milliseconds 40
     await new Promise((r) => setTimeout(r, 60));
   }
 
+  // All attempts failed. On Windows, check whether the clipboard is currently
+  // enterprise-protected (Windows Information Protection / Purview). An unmanaged
+  // process cannot overwrite WIP-tagged clipboard content, so surface that clearly
+  // instead of the generic "could not be verified" — the user needs to know it's a
+  // policy block they can clear by copying any plain local text first.
+  let wipHint = '';
+  if (IS_WIN) {
+    try {
+      const fmts = execSync(
+        `powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; @([System.Windows.Forms.Clipboard]::GetDataObject().GetFormats()) -join ','"`,
+        { encoding: 'utf-8' }
+      );
+      if (/EnterpriseDataProtectionId/i.test(fmts)) {
+        wipHint =
+          ' — the clipboard is currently enterprise-protected (Windows Information Protection). ' +
+          'Copy any plain local text (e.g. Ctrl+C a word in Notepad) to release the protected owner, then retry.';
+      }
+    } catch { /* best-effort hint only */ }
+  }
+
   throw new Error(
     `clipboard write could not be verified after ${attempts} attempts` +
-    (lastErr ? `: ${lastErr.message}` : '')
+    (lastErr ? `: ${lastErr.message}` : '') +
+    wipHint
   );
 }
 
