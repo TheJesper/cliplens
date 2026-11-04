@@ -55,6 +55,13 @@ pub struct NotifyRequest {
     /// "x,y" px nudge from the anchor; empty => "0,0".
     #[serde(default)]
     pub offset: String,
+    /// Sticky: no auto-close. The card stays until the user clicks it or clicks anywhere else.
+    #[serde(default)]
+    pub sticky: bool,
+    /// Shortcut hint shown as discreet keycaps in the bottom-right corner (e.g. "Ctrl+V").
+    /// Empty => no keycaps. On macOS Ctrl renders as the Command symbol.
+    #[serde(default)]
+    pub keys: String,
 }
 
 fn default_emoji() -> String {
@@ -88,6 +95,8 @@ impl Default for NotifyRequest {
             height: 0.0,
             scale: 0.0,
             offset: String::new(),
+            sticky: false,
+            keys: String::new(),
         }
     }
 }

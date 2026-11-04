@@ -11,7 +11,7 @@ import { writeFileSync, readFileSync, unlinkSync } from 'fs';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { notify } from './notify.js';
+import { sendNotify } from './notify.js';
 import { writeTmp, rmTmp } from './tmp.js';
 
 /** Simple markdown -> HTML converter */
@@ -190,4 +190,4 @@ console.log('');
 console.log('HTML-ready! Ctrl+V in Outlook/Teams/Docs.');
 console.log(`${preview}${plainText.length > 120 ? '...' : ''}`);
 
-notify({ message: 'HTML clip ready' });
+sendNotify({ kind: 'clip', format: 'Write \u00b7 Teams', title: 'HTML-clip klar', subtitle: 'i Teams/Outlook', keys: 'Ctrl+V', agent: process.env.CLIPLENS_AGENT || 'cliplens' });

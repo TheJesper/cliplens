@@ -31,6 +31,7 @@ visually distinct.
 | Read plain text / all formats | `cliplens_text` · `cliplens_capture` · `cliplens_formats` · `cliplens_inspect` |
 | Read a Figma/Mural copy | `cliplens_lens` (lens = figma \| mural) |
 | Save a copied image for you to see | `cliplens_save_image` |
+| Shrink a big image FILE on disk to a safe size | `cliplens_safe_image` (downscale a disk image before read_file) |
 | **Write** Slack rich text | `cliplens_write_slack` (markdown in → Quill Delta on the clipboard) |
 | **Write** Teams/Outlook/Docs rich text | `cliplens_write_teams` (markdown in → HTML Format on the clipboard) |
 | **Write** raw text | `cliplens_write_plaintext` |

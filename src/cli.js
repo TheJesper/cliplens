@@ -104,7 +104,7 @@ switch (cmd) {
     const agent = flag('agent') || process.env.CLIPLENS_AGENT || 'cliplens';
     const type = flag('type') || 'Vanilla';
     const clipId = appendHistory({ text, format: 'plain', agent });
-    sendNotify({ kind: 'clip', format: type, title: `${type}-clip klar`, subtitle: `${[...text].length} tecken · Ctrl+V`, agent, sound: clipSound() });
+    sendNotify({ kind: 'clip', format: `Write \u00b7 ${type}`, title: `${type}-clip klar`, subtitle: `${[...text].length} tecken`, keys: "Ctrl+V", agent, sound: clipSound() });
     console.log(`✅ ${[...text].length} tecken på clipboard (UTF-8) — ${agent} · ${type}${clipId ? ` · id=${clipId}` : ''}. Ctrl+V.`);
     break;
   }

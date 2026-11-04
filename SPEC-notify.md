@@ -304,6 +304,23 @@ Rules:
 Implemented via `saveClipImage({ reading })` in `mcp-server.js`:
 `reading:true` -> `kind:'info'`, title "Bild inläst", subtitle = saved path.
 
+**Implemented for ALL clip popups (2026-10-29)** -- one helper `clipToast({ op, format, ... })`:
+
+| op | chip (after the title) | icon | example |
+|----|------------------------|------|---------|
+| `read` | `READ · <format>`, blue | magnifier (every read looks the same) | Read · Image, Read · Text, Read · Figma |
+| `write` | `WRITE · <format>`, neutral | the format's icon | Write · Vanilla, Write · Slack, Write · Teams, Write · Mural |
+
+- Layout: big title FIRST, then the small chip. Subtitle starts with the **sender in bold**
+  ("pp · 142 tecken"); the faint corner badge is gone.
+- Sender: explicit `agent` -> `CLIPLENS_AGENT` -> MCP client name (initialize) -> `cliplens`.
+- **Sticky** (`sticky:true`, `--sticky`, or `CLIPLENS_STICKY=1`): no auto-close; closes on click
+  or click outside (foreground lost). 15 min hard cap. One-shot path only for now (no daemon running).
+- Shortcuts in the subtitle ("Ctrl+V", "Ctrl+Shift+V") render as subtle keycaps (`ui::keycaps`).
+  macOS shows Command / Shift symbols instead of Ctrl / Shift. Unit-tested (`keycap_tests`).
+- Fixed: `--notify` used to swallow `--title` as its value, shifting every arg -> all popup args
+  were ignored (always the default "ClipLens" card). Covered by `arg_tests` in `main.rs`.
+
 ## 8. Non-goals
 
 - No markdown/rich text inside the toast (glanceability).

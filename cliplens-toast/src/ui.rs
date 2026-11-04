@@ -23,6 +23,7 @@ pub struct ToastView<'a> {
     pub subtitle: &'a str,
     pub agent: &'a str,
     pub type_label: &'a str,
+    pub keys: &'a str,
     pub scale: f64,
 }
 
@@ -33,17 +34,10 @@ pub fn toast_html(v: &ToastView) -> String {
     let accent = esc(&v.resolved.accent);
     let emoji = esc(&v.resolved.emoji);
 
-    let sub = if v.subtitle.is_empty() {
-        String::new()
-    } else {
-        format!("<div class=\"sub\">{}</div>", esc(v.subtitle))
-    };
-
-    let badge = if v.agent.trim().is_empty() {
-        String::new()
-    } else {
-        format!("<div class=\"badge\">{}</div>", esc(v.agent))
-    };
+    // Meta row: sender first (bold), then the detail. Shortcut keys live in the corner, not here.
+    let keys_html = keys_corner_html(v.keys);
+    let sub = meta_html(v.agent, v.subtitle, !keys_html.is_empty());
+    let badge = String::new();
 
     // Per-kind emoji animation class.
     let emoji_anim = match kind {
@@ -71,18 +65,28 @@ pub fn toast_html(v: &ToastView) -> String {
         (format!("background:{};", accent), String::new())
     };
 
-    // Clip uses a FatCow icon chosen by clip type (embedded); other kinds keep their emoji glyph.
-    let icon_el = if kind == "clip" {
-        format!(r#"<img class="emoji {a}" src="data:image/png;base64,{ic}"/>"#, a = emoji_anim, ic = icon_for(v.type_label))
+    // FatCow icon for clips AND for any labelled read/write (e.g. "Read · Image"), so a read
+    // shows the magnifier instead of a generic emoji. Other kinds keep their emoji glyph.
+    let labelled = !v.type_label.trim().is_empty();
+    let icon_el = if kind == "clip" || labelled {
+        format!(r#"<div class="tile"><img class="emoji {a}" src="data:image/png;base64,{ic}"/></div>"#, a = emoji_anim, ic = icon_for(v.type_label))
     } else {
         format!(r#"<div class="emoji {a}">{e}</div>"#, a = emoji_anim, e = emoji)
     };
 
-    // Optional clip-type chip (Slack / Mural / Image / Prompt / Normal / Vanilla ...).
-    let chip = if v.type_label.trim().is_empty() {
+    // Clip-type chip: "READ · IMAGE" / "WRITE · SLACK". Reads get a blue chip, writes neutral.
+    let is_read = {
+        let l = v.type_label.trim().to_lowercase();
+        l.starts_with("read") || l.starts_with("läst")
+    };
+    let chip = if !labelled {
         String::new()
     } else {
-        format!(r#"<span class="chip">{}</span>"#, esc(v.type_label))
+        format!(
+            r#"<span class="chip{r}">{t}</span>"#,
+            r = if is_read { " read" } else { "" },
+            t = esc(v.type_label)
+        )
     };
 
     format!(
@@ -90,9 +94,9 @@ pub fn toast_html(v: &ToastView) -> String {
 {base}
 :root{{--scale:{scale};--accent:{accent};}}
 .wrap{{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;}}
-.toast{{position:relative;display:flex;align-items:center;gap:calc(18px*var(--scale));
+.toast{{position:relative;display:flex;align-items:center;gap:calc(16px*var(--scale));
   width:100%;height:100%;box-sizing:border-box;
-  padding:0 calc(30px*var(--scale)) 0 calc(28px*var(--scale));
+  padding:0 calc(24px*var(--scale)) 0 calc(22px*var(--scale));
   background:rgba(74,54,40,0.90);border-radius:calc(22px*var(--scale));color:#F5EFE8;
   cursor:pointer;animation:pop 420ms cubic-bezier(0.22,1,0.36,1);}}
 .toast:active{{transform:scale(0.98);}}
@@ -100,13 +104,35 @@ pub fn toast_html(v: &ToastView) -> String {
 .emoji{{font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
   font-size:calc(52px*var(--scale));line-height:1;
   filter:drop-shadow(0 0 calc(14px*var(--scale)) {accent}88);}}
-img.emoji{{width:32px;height:32px;object-fit:contain;filter:none;image-rendering:-webkit-optimize-contrast;}}
-.chip{{display:inline-block;font-size:calc(10px*var(--scale));font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#F5EFE8;background:rgba(255,255,255,0.16);padding:1px calc(7px*var(--scale));border-radius:calc(6px*var(--scale));margin-right:calc(7px*var(--scale));vertical-align:2px;}}
+.tile{{flex:0 0 auto;width:calc(50px*var(--scale));height:calc(50px*var(--scale));
+  border-radius:calc(15px*var(--scale));background:rgba(255,255,255,0.07);
+  display:flex;align-items:center;justify-content:center;}}
+img.emoji{{width:calc(32px*var(--scale));height:calc(32px*var(--scale));object-fit:contain;filter:none;image-rendering:-webkit-optimize-contrast;}}
+.text{{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(4px*var(--scale));}}
+.title{{display:flex;align-items:center;gap:calc(9px*var(--scale));min-width:0;
+  font-size:calc(21px*var(--scale));font-weight:600;line-height:1.15;}}
+.title .t{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+.chip{{flex:0 0 auto;font-size:calc(10px*var(--scale));font-weight:700;text-transform:uppercase;letter-spacing:0.4px;
+  line-height:1;color:#F5EFE8;background:rgba(255,255,255,0.16);
+  padding:calc(3px*var(--scale)) calc(7px*var(--scale));border-radius:calc(6px*var(--scale));}}
+.chip.read{{background:rgba(10,132,255,0.38);}}
+.meta{{display:flex;align-items:baseline;gap:calc(6px*var(--scale));min-width:0;
+  font-size:calc(13.5px*var(--scale));color:rgba(235,235,245,0.62);}}
+.meta .who{{flex:0 0 auto;color:#F5EFE8;font-weight:700;}}
+.meta .sep{{flex:0 0 auto;opacity:0.4;}}
+.meta .detail{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+.meta.wrap-detail .detail{{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;}}
+.meta.has-keys{{padding-right:calc(60px*var(--scale));}}
+.keys{{position:absolute;right:calc(20px*var(--scale));bottom:calc(10px*var(--scale));
+  display:flex;gap:calc(3px*var(--scale));opacity:0.5;}}
+kbd{{display:inline-block;min-width:calc(8px*var(--scale));text-align:center;
+  font:600 calc(10.5px*var(--scale))/1 "Segoe UI",-apple-system,sans-serif;color:#F5EFE8;
+  background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.22);border-bottom-width:2px;
+  border-radius:calc(4px*var(--scale));padding:calc(2px*var(--scale)) calc(5px*var(--scale));}}
+.meta kbd{{margin:0 calc(1.5px*var(--scale));}}
 .emoji.wiggle{{animation:wiggle 2s ease-in-out infinite;}}
 .emoji.pulse{{animation:pulse 1.3s ease-in-out infinite;}}
 .emoji.bounce{{animation:bounce 900ms cubic-bezier(0.22,1.4,0.4,1);}}
-.title{{font-size:calc(21px*var(--scale));font-weight:600;line-height:1.15;}}
-.sub{{font-size:calc(14px*var(--scale));color:rgba(235,235,245,0.62);margin-top:calc(3px*var(--scale));}}
 .badge{{position:absolute;top:calc(10px*var(--scale));right:calc(14px*var(--scale));
   font-size:calc(9px*var(--scale));text-transform:uppercase;letter-spacing:0.6px;font-weight:700;
   color:rgba(235,235,245,0.55);background:rgba(255,255,255,0.08);
@@ -117,7 +143,8 @@ img.emoji{{width:32px;height:32px;object-fit:contain;filter:none;image-rendering
 {anim}
 </style></head><body><div class="wrap"><div class="toast" onclick="window.ipc.postMessage('dismiss')">
 {icon}
-<div class="text"><div class="title">{chip}{title}</div>{sub}</div>
+<div class="text"><div class="title"><span class="t">{title}</span>{chip}</div>{sub}</div>
+{keys_html}
 {badge}
 {shimmer}
 {confetti}
@@ -131,6 +158,7 @@ img.emoji{{width:32px;height:32px;object-fit:contain;filter:none;image-rendering
         chip = chip,
         title = esc(v.title),
         sub = sub,
+        keys_html = keys_html,
         badge = badge,
         shimmer = shimmer,
         confetti = confetti,
@@ -283,10 +311,87 @@ const ICON_URL: &str = include_str!("icon_url.b64");
 const ICON_PLAIN: &str = include_str!("icon_plain.b64");
 const ICON_READ: &str = include_str!("icon_read.b64");
 
-/// Pick the embedded FatCow icon for a clip's type label (case-insensitive).
-/// Unknown falls back to the clipboard glyph.
+/// Meta row ("sender · detail"). `has_keys` reserves right-hand room so the detail text
+/// never runs under the corner keycaps. `detail` is escaped text (may still contain inline
+/// markup from an earlier `esc`+`keycaps` pass if the caller chose to keep Ctrl+V inline).
+fn meta_html(agent: &str, detail: &str, has_keys: bool) -> String {
+    let agent = agent.trim();
+    if agent.is_empty() && detail.is_empty() {
+        return String::new();
+    }
+    let cls = if has_keys { " has-keys" } else { "" };
+    // Long details (file paths) may wrap to 2 lines; short ones stay on one line (no odd mid-phrase break).
+    let wrap = if detail.chars().count() > 32 { " wrap-detail" } else { "" };
+    let who = if agent.is_empty() {
+        String::new()
+    } else {
+        format!("<b class=\"who\">{}</b>", esc(agent))
+    };
+    let sep = if !agent.is_empty() && !detail.is_empty() { "<span class=\"sep\">\u{00b7}</span>" } else { "" };
+    let det = if detail.is_empty() { String::new() } else { format!("<span class=\"detail\">{}</span>", esc(detail)) };
+    format!("<div class=\"meta{cls}{wrap}\">{who}{sep}{det}</div>", cls = cls, wrap = wrap, who = who, sep = sep, det = det)
+}
+
+/// The discreet shortcut hint, bottom-right. `keys` is raw text like "Ctrl+V" or
+/// "Ctrl+Shift+V"; empty => nothing rendered. Reuses the same shortcut parser as `keycaps`.
+fn keys_corner_html(keys: &str) -> String {
+    if keys.trim().is_empty() {
+        return String::new();
+    }
+    format!("<div class=\"keys\">{}</div>", keycaps(&esc(keys)))
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::{keys_corner_html, meta_html};
+
+    #[test]
+    fn should_render_nothing_when_meta_is_fully_empty() {
+        assert_eq!(meta_html("", "", false), "");
+    }
+
+    #[test]
+    fn should_render_only_the_agent_when_there_is_no_detail() {
+        assert_eq!(meta_html("pp", "", false), "<div class=\"meta\"><b class=\"who\">pp</b></div>");
+    }
+
+    #[test]
+    fn should_separate_agent_and_detail_with_a_middle_dot() {
+        let html = meta_html("pp", "142 tecken", false);
+        assert!(html.contains("<b class=\"who\">pp</b>"));
+        assert!(html.contains("<span class=\"sep\">\u{00b7}</span>"));
+        assert!(html.contains("<span class=\"detail\">142 tecken</span>"));
+    }
+
+    #[test]
+    fn should_reserve_room_for_keys_when_present() {
+        assert!(meta_html("pp", "x", true).contains("meta has-keys"));
+        assert!(!meta_html("pp", "x", false).contains("has-keys"));
+    }
+
+    #[test]
+    fn should_render_empty_corner_when_no_keys_given() {
+        assert_eq!(keys_corner_html(""), "");
+        assert_eq!(keys_corner_html("   "), "");
+    }
+
+    #[test]
+    fn should_render_keycaps_in_the_corner_when_keys_given() {
+        let html = keys_corner_html("Ctrl+V");
+        assert!(html.starts_with("<div class=\"keys\">"));
+        assert!(html.contains("<kbd>"));
+    }
+}
+/// Labels may carry the operation: "Read · Image" -> magnifier (every read looks the same),
+/// "Write · Slack" -> the Slack icon. Unknown falls back to the clipboard glyph.
 fn icon_for(type_label: &str) -> &'static str {
-    match type_label.trim().to_ascii_lowercase().as_str() {
+    let l = type_label.trim().to_lowercase();
+    if l.starts_with("read") || l.starts_with("läst") || l.starts_with("lens") {
+        return ICON_READ;
+    }
+    // "write · slack" -> "slack"
+    let key = l.rsplit('\u{00b7}').next().unwrap_or(&l).trim().to_string();
+    match key.as_str() {
         "read" | "läst" | "lens" => ICON_READ,
         "slack" => ICON_SLACK,
         "mural" | "mural-widgets" => ICON_MURAL,
@@ -316,3 +421,65 @@ const ANIM_CSS: &str = r#"@keyframes pop{0%{opacity:0;transform:scale(0.97);}100
   animation-name:confall;animation-timing-function:cubic-bezier(0.3,0.7,0.4,1);animation-iteration-count:1;animation-fill-mode:forwards;}
 @keyframes confall{0%{transform:translateY(-12px) rotate(0);opacity:0;}
   12%{opacity:1;}100%{transform:translateY(120px) rotate(var(--rot));opacity:0;}}"#;
+
+/// Turn shortcut text like "Ctrl+V" / "Ctrl+Shift+V" (in already-escaped HTML) into subtle
+/// keycaps. On macOS Ctrl -> Command (U+2318) and Shift -> U+21E7, as a Mac user expects.
+/// Anything that is not a full shortcut ("Ctrl+" alone, "Ctrl+Vx") is left as plain text.
+pub fn keycaps(escaped: &str) -> String {
+    keycaps_for(escaped, cfg!(target_os = "macos"))
+}
+
+fn keycaps_for(escaped: &str, mac: bool) -> String {
+    let (ctrl, shift) = if mac { ("\u{2318}", "\u{21E7}") } else { ("Ctrl", "Shift") };
+    let cap = |k: &str| format!("<kbd>{}</kbd>", k);
+    let mut out = String::with_capacity(escaped.len() + 32);
+    let mut rest = escaped;
+    while let Some(pos) = rest.find("Ctrl+") {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + 5..];
+        let (has_shift, tail) = match after.strip_prefix("Shift+") {
+            Some(t) => (true, t),
+            None => (false, after),
+        };
+        let mut chars = tail.chars();
+        let key = chars.next();
+        let next = chars.next();
+        match key {
+            Some(k) if k.is_ascii_alphanumeric() && !next.map_or(false, |n| n.is_ascii_alphanumeric()) => {
+                out.push_str(&cap(ctrl));
+                if has_shift {
+                    out.push_str(&cap(shift));
+                }
+                out.push_str(&cap(&k.to_ascii_uppercase().to_string()));
+                rest = &tail[k.len_utf8()..];
+            }
+            _ => {
+                out.push_str("Ctrl+"); // not a shortcut, keep the text
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod keycap_tests {
+    use super::keycaps_for;
+
+    #[test]
+    fn should_render_ctrl_v_as_two_keycaps_on_windows() {
+        assert_eq!(keycaps_for("142 tecken · Ctrl+V", false), "142 tecken · <kbd>Ctrl</kbd><kbd>V</kbd>");
+    }
+
+    #[test]
+    fn should_use_command_and_shift_symbols_on_mac() {
+        assert_eq!(keycaps_for("Ctrl+Shift+V i Slack", true), "<kbd>\u{2318}</kbd><kbd>\u{21E7}</kbd><kbd>V</kbd> i Slack");
+    }
+
+    #[test]
+    fn should_leave_text_alone_when_it_is_not_a_full_shortcut() {
+        assert_eq!(keycaps_for("Ctrl+ alone, Ctrl+Vx", false), "Ctrl+ alone, Ctrl+Vx");
+        assert_eq!(keycaps_for("no shortcut here", false), "no shortcut here");
+    }
+}

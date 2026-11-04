@@ -70,6 +70,13 @@ fn parse_notify_args(argv: &[String]) -> NotifyRequest {
     let mut i = 1;
     while i < argv.len() {
         let key = argv[i].as_str();
+        // Mode flags carry no value. Without this skip, `--notify` swallowed `--title` as its
+        // "value" and every later pair was shifted by one -> ALL args silently ignored
+        // (default "ClipLens" card at the bottom, no type/agent/position).
+        if matches!(key, "--notify" | "--watch" | "--ping") {
+            i += 1;
+            continue;
+        }
         let val = argv.get(i + 1).cloned().unwrap_or_default();
         match key {
             "--emoji" => req.emoji = val,
@@ -89,6 +96,13 @@ fn parse_notify_args(argv: &[String]) -> NotifyRequest {
             "--height" => req.height = val.parse().unwrap_or(0.0),
             "--scale" => req.scale = val.parse().unwrap_or(0.0),
             "--offset" => req.offset = val,
+            "--keys" => req.keys = val,
+            // Flag without a value: stay until clicked / clicked outside.
+            "--sticky" => {
+                req.sticky = true;
+                i += 1;
+                continue;
+            }
             _ => {}
         }
         i += 2;
@@ -369,6 +383,7 @@ fn render_request(req: &NotifyRequest) -> (Resolved, f64, f64, f64, String) {
         subtitle: &req.subtitle,
         agent: &req.agent,
         type_label: &req.format,
+        keys: &req.keys,
         scale,
     };
     let html = ui::toast_html(&view);
@@ -750,6 +765,33 @@ fn play_sound(sound: &str) {
 
 // ----- one-shot toast (default mode, no daemon) -------------------------
 
+/// Does THIS process own the foreground window? Used by sticky cards: once we've been in front,
+/// losing it means the user clicked somewhere else -> close. Focus events are unreliable here
+/// because keyboard focus sits in the WebView2 child, not the tao window.
+#[cfg(target_os = "windows")]
+fn we_own_foreground(_window: &Window) -> bool {
+    use std::os::raw::c_void;
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetForegroundWindow() -> *mut c_void;
+        fn GetWindowThreadProcessId(hwnd: *mut c_void, pid: *mut u32) -> u32;
+    }
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.is_null() {
+            return false;
+        }
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(fg, &mut pid);
+        pid == std::process::id()
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn we_own_foreground(window: &Window) -> bool {
+    window.is_focused()
+}
+
 fn show_toast_oneshot(req: NotifyRequest) {
     let event_loop = EventLoopBuilder::<()>::with_user_event().build();
 
@@ -775,16 +817,62 @@ fn show_toast_oneshot(req: NotifyRequest) {
         Err(_) => return,
     };
     window.set_visible(true);
+    // Sticky: take focus so "click anywhere else" = focus lost = close. Normal toasts never
+    // steal focus (by design); sticky is an explicit opt-in, so here it's the point.
+    if req.sticky {
+        window.set_focus();
+    }
 
     play_sound(&effective_sound(&req));
 
     let start = Instant::now();
     let total = Duration::from_millis(resolved.duration);
-    event_loop.run(move |event, _, control_flow| {
+    let sticky = req.sticky;
+    let mut was_front = false;
+    event_loop.run(move |_event, _, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(80));
-        let _ = &event;
-        if start.elapsed() >= total || dismissed.load(std::sync::atomic::Ordering::Relaxed) {
+        if sticky {
+            if we_own_foreground(&window) {
+                was_front = true;
+            } else if was_front {
+                *control_flow = ControlFlow::Exit; // clicked outside
+                return;
+            }
+        }
+        // Sticky never times out, but a 15 min hard cap stops an orphaned card living forever.
+        let timed_out = if sticky { start.elapsed() >= Duration::from_secs(900) } else { start.elapsed() >= total };
+        if timed_out || dismissed.load(std::sync::atomic::Ordering::Relaxed) {
             *control_flow = ControlFlow::Exit;
         }
     });
+}
+
+#[cfg(test)]
+mod arg_tests {
+    use super::parse_notify_args;
+
+    fn argv(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn should_read_every_arg_when_called_with_notify_mode_flag() {
+        let r = parse_notify_args(&argv(&[
+            "cliplens-daemon", "--notify", "--title", "Slack-clip klar", "--subtitle", "Ctrl+V",
+            "--agent", "pp", "--type", "Write \u{00b7} Slack", "--position", "center", "--kind", "clip",
+        ]));
+        assert_eq!(r.title, "Slack-clip klar");
+        assert_eq!(r.subtitle, "Ctrl+V");
+        assert_eq!(r.agent, "pp");
+        assert_eq!(r.format, "Write \u{00b7} Slack");
+        assert_eq!(r.position, "center");
+        assert_eq!(r.kind, "clip");
+    }
+
+    #[test]
+    fn should_read_every_arg_when_called_without_a_mode_flag() {
+        let r = parse_notify_args(&argv(&["cliplens-daemon", "--title", "Bild inläst", "--kind", "info"]));
+        assert_eq!(r.title, "Bild inläst");
+        assert_eq!(r.kind, "info");
+    }
 }

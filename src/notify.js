@@ -121,6 +121,8 @@ function findToastBinary() {
  * @param {string} [opts.offset]   - "x,y" px nudge from the anchor.
  * @param {number} [opts.duration] - Milliseconds on screen (overrides kind default).
  * @param {string} [opts.id]       - Stable id: re-notify with same id updates the card in place.
+ * @param {boolean} [opts.sticky]  - No auto-close; closes on click or click outside (or CLIPLENS_STICKY=1).
+ * @param {string} [opts.keys]     - Shortcut hint shown as discreet keycaps bottom-right (e.g. "Ctrl+V").
  * @returns {"daemon"|"oneshot"|"noop"} how the notification was delivered.
  */
 export function sendNotify({
@@ -140,6 +142,8 @@ export function sendNotify({
   offset,
   duration,
   id,
+  sticky,
+  keys,
 } = {}) {
   try {
     const bin = findToastBinary();
@@ -170,6 +174,9 @@ export function sendNotify({
     push('--offset', offset);
     if (Number(duration) > 0) push('--duration', Number(duration));
     push('--id', id);
+    // Sticky = no auto-close; closes on click or click outside. Per call, or CLIPLENS_STICKY=1.
+    if (sticky === true || process.env.CLIPLENS_STICKY === '1') args.push('--sticky');
+    push('--keys', keys);
 
     const child = spawn(bin, args, { detached: true, stdio: 'ignore' });
     child.unref();

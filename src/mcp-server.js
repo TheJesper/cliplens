@@ -80,24 +80,62 @@ function previewWords(text, maxWords = 5, maxChars = 48) {
 }
 
 /**
- * Fire a READ notification: ClipLens just LOOKED at the clipboard (analyze /
- * text / lens). This is the "I've read it, the clipboard is free for your next
- * copy" receipt the user relies on. Distinct from a write:
- *   - kind 'info' (not 'clip') + type label "Read"/"Läst" so the daemon shows
- *     the READ icon (magnifier), visually different from a write (pen).
- *   - title says it was read; subtitle = sender + a short preview (never full).
+ * Who sent this? explicit `agent` arg -> CLIPLENS_AGENT env -> the MCP client's own name
+ * (from initialize) -> 'cliplens'. Shown as the first word of the popup subtitle.
+ */
+function sender(explicit) {
+  if (explicit && String(explicit).trim()) return String(explicit).trim();
+  if (process.env.CLIPLENS_AGENT) return process.env.CLIPLENS_AGENT;
+  try {
+    const c = server.getClientVersion?.();
+    if (c && c.name) return c.name;
+  } catch { /* not initialized yet */ }
+  return 'cliplens';
+}
+
+/**
+ * The ONE way to show a clipboard popup, so read and write always look different:
+ *   op 'read'  -> chip "Read · <format>", magnifier icon, blue chip (nothing new copied)
+ *   op 'write' -> chip "Write · <format>", the format's icon (Slack/Teams/Vanilla/...)
+ * Subtitle = detail; the daemon puts the sender in front ("pp · 142 tecken").
  * Fire-and-forget; never throws.
  */
-function notifyRead({ format = 'text', agent, preview = '' } = {}) {
-  const who = agent || process.env.CLIPLENS_AGENT || 'cliplens';
-  const label = format ? `Läst: ${format}` : 'Urklipp läst';
+function clipToast({ op = 'write', format, title, detail = '', keys, agent, emoji } = {}) {
+  const read = op === 'read';
+  const fmt = format || (read ? 'Text' : 'Clip');
   sendNotify({
-    kind: 'info',
-    format: 'Read',            // daemon maps this to the magnifier (read) icon
-    title: label,
-    subtitle: preview || 'urklippet är fritt för nästa',
-    agent: who,
+    kind: read ? 'info' : 'clip',
+    format: `${read ? 'Read' : 'Write'} \u00b7 ${fmt}`,
+    title,
+    subtitle: detail,
+    keys,
+    agent: sender(agent),
+    emoji,
     sound: clipSound(),
+  });
+}
+
+/** History format ('plain', 'slack', 'html'...) -> popup label ('Vanilla', 'Slack', 'Teams'...). */
+function clipFormatLabel(f) {
+  const k = String(f || '').toLowerCase();
+  const map = { plain: 'Vanilla', normal: 'Vanilla', text: 'Vanilla', vanilla: 'Vanilla', slack: 'Slack', teams: 'Teams',
+    html: 'Teams', outlook: 'Outlook', email: 'Outlook', mural: 'Mural', image: 'Image', prompt: 'Prompt', url: 'URL' };
+  return map[k] || (f ? String(f) : 'Clip');
+}
+
+/**
+ * Fire a READ notification: ClipLens just LOOKED at the clipboard (analyze /
+ * text / lens). This is the "I've read it, the clipboard is free for your next
+ * copy" receipt the user relies on. Distinct from a write (see clipToast).
+ * Fire-and-forget; never throws.
+ */
+function notifyRead({ format = 'Text', agent, preview = '' } = {}) {
+  clipToast({
+    op: 'read',
+    format,
+    title: 'Urklipp läst',
+    detail: preview || 'urklippet är fritt för nästa',
+    agent,
   });
 }
 
@@ -228,15 +266,14 @@ if ($img) {
   const dims = (savedDims || result).trim();
   const originalDims = (origDims || savedDims || result).trim();
   const downscaled = dims !== originalDims;
-  const who = agent || process.env.CLIPLENS_AGENT || 'cliplens';
-  // A READ is not a new clip — say so, and never route it through the "clip"
-  // kind (which the daemon styles as a fresh write). Show the saved path.
-  sendNotify({
-    kind: 'info',
-    emoji: '\u{1F5BC}\u{FE0F}',
+  // A READ is not a new clip: clipToast styles it as Read (magnifier, blue chip), never as a
+  // fresh write. Detail = the saved path (read) or the size (fetched).
+  clipToast({
+    op: 'read',
+    format: 'Image',
     title: reading ? 'Bild inläst' : 'Bild hämtad',
-    subtitle: reading ? outPath : (downscaled ? `${dims} px (av ${originalDims})` : `${dims} px`),
-    agent: who,
+    detail: reading ? outPath : (downscaled ? `${dims} px (av ${originalDims})` : `${dims} px`),
+    agent,
   });
   // If the user opted into being asked where images go AND hasn't set a folder
   // yet, signal the agent to prompt them. Additive — callers can ignore it.
@@ -495,6 +532,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           offset: { type: 'string', description: "Nudge from the anchor as 'x,y' px (e.g. '0,-40' = 40px up)." },
           duration: { type: 'number', description: 'Milliseconds on screen. Overrides the kind default.' },
           id: { type: 'string', description: 'Stable id: re-notifying with the same id updates the existing card in place instead of stacking.' },
+          sticky: { type: 'boolean', description: 'No auto-close: the card stays until the user clicks it or clicks anywhere else. Use for things the user must not miss (demo, blocked-needs-decision). Default false.' },
+          keys: { type: 'string', description: 'Shortcut hint shown as discreet keycaps in the bottom-right corner, e.g. "Ctrl+V". On macOS Ctrl renders as the Command symbol. Keep it out of the subtitle.' },
         },
         required: ['title'],
       },
@@ -535,6 +574,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           key: { type: 'string', description: "Config key for set/clear: imageDir | askImageDir | remindCache | history." },
           value: { type: 'string', description: "Value for set. Booleans accept on/off/true/false; imageDir is a folder path." },
         },
+      },
+    },
+    {
+      name: 'cliplens_safe_image',
+      description: "Downscale an image FILE on disk to a safe size and return a path you can read_file. SAME safe-size logic as clipboard images, applied to a file. Use BEFORE reading a large screenshot/design frame so it never overflows the agent context (the >8000px → /rewind guard). SAFE BY DEFAULT: caps the longest edge at config maxImageEdge (default 2000px); pass full:true for original resolution. Returns { path, dims, originalDims, downscaled }. The source file is never modified — a downscaled copy is written to the temp image dir.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Absolute path to the source image file on disk.' },
+          full: { type: 'boolean', description: 'true = keep original resolution (no downscale). Default false = cap to safe max edge.' },
+          agent: { type: 'string', description: 'Sender agent for the read-receipt popup. Falls back to CLIPLENS_AGENT env.' },
+        },
+        required: ['path'],
       },
     },
     {
@@ -741,7 +793,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: `Clip FAILED: ${e.message}. Clipboard was not changed — nothing to paste.` }] };
       }
       const clipId = appendHistory({ text: args.text, format: 'plain', agent });
-      sendNotify({ kind: 'clip', format: 'Normal', title: 'Text klar', subtitle: `${args.text.length} tecken`, agent, sound: clipSound() });
+      clipToast({ op: 'write', format: 'Vanilla', title: 'Text klar', detail: `${args.text.length} tecken`, keys: 'Ctrl+V', agent });
       return { content: [{ type: 'text', text: withHint(`Written ${args.text.length} chars as PLAIN TEXT to clipboard. clipId=${clipId} (reclip with this id for the exact same clip). Note: no formatting — for Slack formatting use cliplens_write_slack.`) }] };
     }
 
@@ -754,7 +806,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'slack', agent });
-        sendNotify({ kind: 'clip', format: 'Slack', title: 'Slack-clip klar', subtitle: 'Ctrl+V i Slack', agent, sound: clipSound() });
+        clipToast({ op: 'write', format: 'Slack', title: 'Slack-clip klar', detail: 'i Slack', keys: 'Ctrl+V', agent });
         return { content: [{ type: 'text', text: withHint(`✅ Slack-formatted clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Slack.`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: teamsClipError('Slack', e) }] };
@@ -772,7 +824,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'html', agent });
-        sendNotify({ kind: 'clip', format: 'Teams', title: 'Teams-clip klar', subtitle: 'Ctrl+V i Teams', agent, sound: clipSound() });
+        clipToast({ op: 'write', format: 'Teams', title: 'Teams-clip klar', detail: 'i Teams', keys: 'Ctrl+V', agent });
         return { content: [{ type: 'text', text: withHint(`✅ Teams/HTML clipboard ready (${args.markdown.length} chars). clipId=${clipId} (reclip with this id for the exact same clip). Tell user to Ctrl+V in Teams/Outlook/Docs.`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: teamsClipError('Teams', e) }] };
@@ -900,6 +952,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         offset: a.offset,
         duration: a.duration,
         id: a.id,
+        sticky: a.sticky === true,
+        keys: a.keys,
       });
       const kind = a.kind || 'info';
       const soundNote = (a.sound && a.sound !== 'off') ? ` sound=${a.sound}` : ' (silent)';
@@ -933,7 +987,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           await writeText(entry.text);
         }
         // Re-notify so the user gets the same visual confirmation.
-        sendNotify({ kind: 'clip', title: 'Clip återställd', subtitle: `${fmt} • Ctrl+V`, agent: who });
+        clipToast({ op: 'write', format: clipFormatLabel(fmt), title: 'Clip återställd', detail: '', keys: 'Ctrl+V', agent: who });
         const preview = entry.text.replace(/\s+/g, ' ').trim().slice(0, 60);
         const label = a.agent ? `${who}'s latest ${fmt} clip` : `latest ${fmt} clip (${who})`;
         return { content: [{ type: 'text', text: `♻️ Recalled ${label} — re-encoded to clipboard, no regeneration. Ctrl+V now.\n\n"${preview}${entry.text.length > 60 ? '…' : ''}"` }] };
@@ -955,7 +1009,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: `Reclip failed (${res.format}): ${res.detail}` }] };
       }
       const who = entry.agent || 'unknown';
-      sendNotify({ kind: 'clip', title: 'Re-clippad', subtitle: `${res.format} • Ctrl+V`, agent: who });
+      clipToast({ op: 'write', format: clipFormatLabel(res.format), title: 'Re-clippad', detail: '', keys: 'Ctrl+V', agent: who });
       return { content: [{ type: 'text', text: `♻️ Re-clipped ${res.format} [${entry.id}] — ${res.detail}. Ctrl+V now.` }] };
     }
 
@@ -1015,6 +1069,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: 'text', text: `ClipLens config (local, ~/.cliplens/state.json — never committed):\n${lines.join('\n')}\n\nEffective image folder: ${dir}` }] };
     }
 
+    case 'cliplens_safe_image': {
+      const a = args || {};
+      if (!a.path) {
+        return { content: [{ type: 'text', text: 'cliplens_safe_image needs a `path` to an image file.' }] };
+      }
+      const { existsSync, mkdirSync } = await import('fs');
+      const { join: pjoin, basename } = await import('path');
+      if (!existsSync(a.path)) {
+        return { content: [{ type: 'text', text: `Image not found: ${a.path}` }] };
+      }
+      const { downscaleImageFile } = await import('./image-size.js');
+      const edge = a.full === true ? 0 : maxImageEdge();
+      const dir = await imageDir();
+      try { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); } catch { /* fall through */ }
+      const outPath = pjoin(dir, `cliplens-safe-${basename(a.path).replace(/[^\w.-]/g, '_')}.png`);
+      const res = downscaleImageFile(a.path, outPath, edge);
+      if (!res) {
+        return { content: [{ type: 'text', text: `Could not read/resize image: ${a.path}. Is it a valid image file?` }] };
+      }
+      clipToast({
+        op: 'read',
+        format: 'Image',
+        title: 'Bild s\u00e4krad',
+        detail: res.downscaled ? `${res.dims} px (av ${res.originalDims})` : `${res.dims} px`,
+        agent: a.agent,
+      });
+      const note = res.downscaled
+        ? `Downscaled to ${res.dims} px (original ${res.originalDims} px). Pass full:true for original resolution.`
+        : `Within safe size (${res.dims} px) — copied through.`;
+      return { content: [{ type: 'text', text: `Safe image ready: ${outPath}. ${note} Use read_file to view it.` }] };
+    }
+
     case 'cliplens_pen_image': {
       const a = args || {};
       const { existsSync } = await import('fs');
@@ -1041,7 +1127,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         const agent = a.agent || process.env.CLIPLENS_AGENT || 'cliplens';
         penImage(imagePath, { record: true, agent });
-        sendNotify({ kind: 'clip', emoji: '\u{1F5BC}\u{FE0F}', format: 'Image', title: 'Bild klar', subtitle: 'Ctrl+V', agent, sound: clipSound() });
+        clipToast({ op: 'write', format: 'Image', title: 'Bild klar', detail: '', keys: 'Ctrl+V', agent });
         return { content: [{ type: 'text', text: withHint(`🖼️ Image on clipboard (transparency preserved): ${imagePath}. Ctrl+V to paste (Mural/Slack/Teams/Word).`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Image pen error: ${e.message}` }] };
@@ -1059,7 +1145,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           { nodes: a.nodes, edges: a.edges || [], layout: a.layout || 'flow-lr' },
           { owner: process.env.CLIPLENS_MURAL_OWNER || undefined, agent, record: true }
         );
-        sendNotify({ kind: 'clip', emoji: '\u{1F5FA}\u{FE0F}', format: 'Mural', title: 'Diagram klart', subtitle: `${res.nodes} noder, ${res.edges} pilar • Ctrl+V`, agent, sound: clipSound() });
+        clipToast({ op: 'write', format: 'Mural', title: 'Diagram klart', detail: `${res.nodes} noder, ${res.edges} pilar`, keys: 'Ctrl+V', agent });
         return { content: [{ type: 'text', text: withHint(`🗺️ Diagram on clipboard: ${res.nodes} nodes, ${res.edges} connectors (${res.count} widgets). Ctrl+V in Mural to paste as native shapes.`) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Draw error: ${e.message}` }] };
