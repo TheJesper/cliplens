@@ -114,6 +114,11 @@ fn parse_notify_args(argv: &[String]) -> NotifyRequest {
             req.agent = a;
         }
     }
+    // `notify` kind is sticky by default (a standing notice waits for a click). An explicit
+    // --sticky already set it true; this only fills the default when the caller didn't say.
+    if !req.sticky && preset::kind_wants_sticky(&req.kind) {
+        req.sticky = true;
+    }
     req
 }
 

@@ -520,7 +520,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           title: { type: 'string', description: 'Main line. Short, glanceable. <40 chars ideal.' },
           subtitle: { type: 'string', description: 'Optional second line, dim. One line, shown verbatim.' },
           agent: { type: 'string', description: "Sending agent name (e.g. 'pp', 'main', 'review'). ALWAYS set it — shown as a small badge. Falls back to CLIPLENS_AGENT env." },
-          kind: { type: 'string', enum: ['success', 'error', 'warning', 'info', 'question', 'progress', 'clip', 'celebrate'], description: 'Semantic intent. Sets emoji/color/duration defaults. Default: info.' },
+          kind: { type: 'string', enum: ['success', 'error', 'warning', 'info', 'question', 'progress', 'clip', 'celebrate', 'notify'], description: 'Semantic intent. Sets emoji/color/duration defaults. Default: info. "notify" = a calm standing notice (solarized-teal, megaphone, sticky by default: stays until the user clicks it or clicks outside).' },
           emoji: { type: 'string', description: "Override the kind's emoji. Single glyph." },
           accent: { type: 'string', description: 'Override accent color as hex (e.g. "#30D158").' },
           sound: { type: 'string', description: "Opt-in sound: 'success'|'error'|'celebrate', a .wav/.mp3 path, or 'off'. Default 'off' (visual-only)." },

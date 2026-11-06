@@ -65,13 +65,23 @@ pub fn toast_html(v: &ToastView) -> String {
         (format!("background:{};", accent), String::new())
     };
 
+    // `notify` gets its own calmer card tint (a touch of teal over the warm base) so a standing
+    // notice reads differently from a clip receipt, while staying in the solarized family.
+    let card_bg = if kind == "notify" {
+        "linear-gradient(135deg,rgba(60,66,66,0.93),rgba(74,54,40,0.93))"
+    } else {
+        "rgba(74,54,40,0.90)"
+    };
+
     // FatCow icon for clips AND for any labelled read/write (e.g. "Read · Image"), so a read
-    // shows the magnifier instead of a generic emoji. Other kinds keep their emoji glyph.
+    // shows the magnifier instead of a generic emoji. Other kinds (notify, success, ...) keep
+    // their emoji glyph in the tile so the meaning reads at a glance.
     let labelled = !v.type_label.trim().is_empty();
-    let icon_el = if kind == "clip" || labelled {
+    let use_img = (kind == "clip" || labelled) && kind != "notify";
+    let icon_el = if use_img {
         format!(r#"<div class="tile"><img class="emoji {a}" src="data:image/png;base64,{ic}"/></div>"#, a = emoji_anim, ic = icon_for(v.type_label))
     } else {
-        format!(r#"<div class="emoji {a}">{e}</div>"#, a = emoji_anim, e = emoji)
+        format!(r#"<div class="tile"><div class="emoji {a}">{e}</div></div>"#, a = emoji_anim, e = emoji)
     };
 
     // Clip-type chip: "READ · IMAGE" / "WRITE · SLACK". Reads get a blue chip, writes neutral.
@@ -97,7 +107,7 @@ pub fn toast_html(v: &ToastView) -> String {
 .toast{{position:relative;display:flex;align-items:center;gap:calc(16px*var(--scale));
   width:100%;height:100%;box-sizing:border-box;
   padding:0 calc(24px*var(--scale)) 0 calc(22px*var(--scale));
-  background:rgba(74,54,40,0.90);border-radius:calc(22px*var(--scale));color:#F5EFE8;
+  background:{card_bg};border-radius:calc(22px*var(--scale));color:#F5EFE8;
   cursor:pointer;animation:pop 420ms cubic-bezier(0.22,1,0.36,1);}}
 .toast:active{{transform:scale(0.98);}}
 .rail{{position:absolute;left:0;top:14%;bottom:14%;width:4px;border-radius:4px;{rail_style}}}
@@ -107,6 +117,7 @@ pub fn toast_html(v: &ToastView) -> String {
 .tile{{flex:0 0 auto;width:calc(50px*var(--scale));height:calc(50px*var(--scale));
   border-radius:calc(15px*var(--scale));background:rgba(255,255,255,0.07);
   display:flex;align-items:center;justify-content:center;}}
+.tile .emoji{{font-size:calc(30px*var(--scale));line-height:1;}}
 img.emoji{{width:calc(32px*var(--scale));height:calc(32px*var(--scale));object-fit:contain;filter:none;image-rendering:-webkit-optimize-contrast;}}
 .text{{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(4px*var(--scale));}}
 .title{{display:flex;align-items:center;gap:calc(9px*var(--scale));min-width:0;
@@ -153,6 +164,7 @@ kbd{{display:inline-block;min-width:calc(8px*var(--scale));text-align:center;
         anim = ANIM_CSS,
         scale = v.scale,
         accent = accent,
+        card_bg = card_bg,
         rail_style = rail_style,
         icon = icon_el,
         chip = chip,
@@ -343,7 +355,7 @@ fn keys_corner_html(keys: &str) -> String {
 
 #[cfg(test)]
 mod layout_tests {
-    use super::{keys_corner_html, meta_html};
+    use super::{keys_corner_html, meta_html, toast_html, ToastView};
 
     #[test]
     fn should_render_nothing_when_meta_is_fully_empty() {
@@ -380,6 +392,24 @@ mod layout_tests {
         let html = keys_corner_html("Ctrl+V");
         assert!(html.starts_with("<div class=\"keys\">"));
         assert!(html.contains("<kbd>"));
+    }
+
+    #[test]
+    fn notify_kind_uses_megaphone_glyph_teal_tint_and_no_clip_image() {
+        let resolved = crate::preset::resolve_kind("notify", "", "", 0);
+        let v = ToastView { resolved: &resolved, title: "Deploy klar", subtitle: "pp 4.2.0", agent: "pp", type_label: "", keys: "", scale: 1.0 };
+        let html = toast_html(&v);
+        assert!(html.contains("\u{1F4E3}"), "megaphone glyph present");
+        assert!(!html.contains("<img class=\"emoji"), "no FatCow clip image for notify");
+        assert!(html.contains("linear-gradient(135deg,rgba(60,66,66"), "solarized-teal card tint");
+    }
+
+    #[test]
+    fn clip_kind_still_uses_the_fatcow_image() {
+        let resolved = crate::preset::resolve_kind("clip", "", "", 0);
+        let v = ToastView { resolved: &resolved, title: "Text klar", subtitle: "", agent: "pp", type_label: "Write \u{00b7} Slack", keys: "Ctrl+V", scale: 1.0 };
+        let html = toast_html(&v);
+        assert!(html.contains("<img class=\"emoji"), "clip uses the FatCow image");
     }
 }
 /// Labels may carry the operation: "Read · Image" -> magnifier (every read looks the same),

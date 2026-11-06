@@ -40,6 +40,9 @@ fn base(kind: &str) -> (&'static str, &'static str, u64, &'static str) {
         "warning" => ("\u{26A0}\u{FE0F}", "#FF9F0A", 3800, "success"), // warning sign (reuse success chime)
         "info" => ("\u{2139}\u{FE0F}", "#0A84FF", 2600, "success"),    // information
         "question" => ("\u{1F4AC}", "#BF5AF2", 6000, "success"), // speech balloon
+        // A calm, lingering notice (solarized-teal, fits the warm card). Sticky by default
+        // (see wants_sticky) so it waits for a click rather than vanishing.
+        "notify" => ("\u{1F4E3}", "#2AA198", 8000, ""), // megaphone, solarized cyan
         "progress" => ("\u{23F3}", "#0A84FF", PROGRESS_MAX_MS, ""), // hourglass, self-caps at 90s
         "celebrate" => ("\u{1F389}", "#FF2D55", 4200, "celebrate"), // party popper (rainbow rail in CSS)
         "clip" => ("\u{1F4CB}", "#8E8E93", 2200, ""),           // clipboard, graphite
@@ -95,6 +98,12 @@ pub fn resolve_kind(
     }
 }
 
+/// Does this kind default to sticky (no auto-close, wait for a click)? `notify` does: a
+/// standing notice should linger until dismissed. Explicit `sticky` on the request still wins.
+pub fn kind_wants_sticky(kind: &str) -> bool {
+    normalize_kind(kind) == "notify"
+}
+
 /// Resolve the size preset for a size string, deriving from kind when empty.
 /// clip -> small, celebrate -> large, everything else -> normal.
 pub fn resolve_size(size: &str, kind: &str) -> SizeBox {
@@ -102,7 +111,7 @@ pub fn resolve_size(size: &str, kind: &str) -> SizeBox {
     let s = if s.is_empty() {
         match normalize_kind(kind).as_str() {
             "clip" => "small",
-            "celebrate" => "large",
+            "celebrate" | "notify" => "large",
             _ => "normal",
         }
     } else {
@@ -187,6 +196,22 @@ mod tests {
         let r = resolve_kind("celebrate", "", "", 0);
         assert_eq!(r.default_sound, "celebrate");
         assert_eq!(r.duration, 4200);
+    }
+
+    #[test]
+    fn notify_is_solarized_teal_and_sticky_by_default() {
+        let r = resolve_kind("notify", "", "", 0);
+        assert_eq!(r.accent, "#2AA198");
+        assert_eq!(r.duration, 8000);
+        assert!(kind_wants_sticky("notify"));
+        assert!(kind_wants_sticky("  NOTIFY "));
+        assert!(!kind_wants_sticky("clip"));
+        assert!(!kind_wants_sticky("info"));
+    }
+
+    #[test]
+    fn notify_derives_large_size() {
+        assert_eq!(resolve_size("", "notify"), SizeBox { width: 560.0, height: 132.0 });
     }
 
     #[test]
