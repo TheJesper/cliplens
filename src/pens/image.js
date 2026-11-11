@@ -38,7 +38,8 @@ export async function penImage(imagePath, { record = true, agent } = {}) {
     writeImageToClipboard(imagePath);
   } else {
     // Windows: PowerShell
-    const p = imagePath.replace(/'/g, "''");
+    const { psq } = await import('../ps.js');
+    const p = psq(imagePath);
     const tmpPs = writeTmp(
     `Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing

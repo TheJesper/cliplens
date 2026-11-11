@@ -59,7 +59,7 @@ export async function replay(entry) {
         return { ok: true, format: fmt, detail: `${specs.length} Mural widget(s)` };
       }
       case 'image': {
-        penImage(entry.imagePath, { record: false });
+        await penImage(entry.imagePath, { record: false });
         return { ok: true, format: fmt, detail: entry.imagePath };
       }
       default:

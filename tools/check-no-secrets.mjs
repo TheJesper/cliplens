@@ -27,6 +27,17 @@ const PATTERNS = [
   { re: /\d+ minuter \d+ sekunder|\d+ minutes? \d+ seconds?|startade transkriptionen|started transcription|AI-genererat inneh|AI-generated content may/i, label: 'pasted meeting transcript (contains real names)' },
 ];
 
+// HARD patterns run on EVERY tracked file (even ones in SKIP below) except this scanner itself:
+// internal infrastructure names, corporate identities and credential shapes.
+const HARD = [
+  { re: /vg-cs\.net|artifactory\.|sharedservices/i, label: 'internal registry / infrastructure host' },
+  { re: /conzeon|@consultant\.volvo/i, label: 'corporate/consultancy identity' },
+  { re: /\bgh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}/, label: 'GitHub token' },
+  { re: /\bAKIA[0-9A-Z]{16}\b/, label: 'AWS access key id' },
+  { re: /\bxox[abpr]-[A-Za-z0-9-]{10,}/, label: 'Slack token' },
+  { re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, label: 'private key' },
+];
+
 // Files/dirs to skip even if tracked (docs may legitimately mention a term).
 // The transcript lens and its example legitimately OWN the transcript format
 // (they parse "N minuter M sekunder" etc.), so the transcript-signature pattern
@@ -46,12 +57,13 @@ function tracked() {
 
 const hits = [];
 for (const file of tracked()) {
-  if (SKIP.some((r) => r.test(file))) continue;
+  if (file === 'tools/check-no-secrets.mjs' || file === '.gitignore') continue;
+  const skipSoft = SKIP.some((r) => r.test(file));
   let text;
   try { text = readFileSync(file, 'utf8'); } catch { continue; } // binary/unreadable
   const lines = text.split('\n');
   lines.forEach((line, i) => {
-    for (const { re, label } of PATTERNS) {
+    for (const { re, label } of (skipSoft ? HARD : [...PATTERNS, ...HARD])) {
       if (re.test(line)) hits.push({ file, line: i + 1, label, snippet: line.trim().slice(0, 80) });
     }
   });

@@ -34,6 +34,7 @@ clips/
 templates/*-mt.json
 templates/*.local.json
 mural-catalog/
+snapshot-*.json
 
 # OS
 .DS_Store

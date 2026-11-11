@@ -23,6 +23,7 @@ interprocess = "2"
 
 [target.'cfg(unix)'.dependencies]
 interprocess = "2"
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"

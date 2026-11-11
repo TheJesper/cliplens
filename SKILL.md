@@ -117,7 +117,8 @@ prefer `[label](url)` so the same source works for Teams/plaintext too. Same for
 ## Clip cache / history (off by default) — `/cliplens cache on|off`
 
 Clip history ("cache") lets you **reclip** a past clip exactly. It is **OFF by default** for privacy —
-nothing generated is written to disk unless the user turns it on. Toggle it at runtime with the
+no clip history is written to disk unless the user turns it on (short-lived temp files for scripts and
+saved images are separate and live in the OS temp folder). Toggle it at runtime with the
 `cliplens_cache` tool (no restart needed):
 
 | User says | Call |
@@ -127,7 +128,7 @@ nothing generated is written to disk unless the user turns it on. Toggle it at r
 | "is cache on?" · "history status" | `cliplens_cache { action: "status" }` |
 
 The toggle is **local to the machine** (`~/.cliplens/state.json`) and is **never committed** — the repo
-default is always OFF. When ON, clips live at most ~1h and auto-expire. To wipe immediately use
+default is always OFF. When ON, clips live at most ~1h (expired entries are removed the next time ClipLens reads or writes the history, not on a timer; files are owner-only on macOS/Linux). To wipe immediately use
 `/clip clear` (`cliplens_clear`). An explicit `CLIPLENS_HISTORY` in mcp.json env overrides the toggle.
 
 ### Local config (`cliplens_config`)

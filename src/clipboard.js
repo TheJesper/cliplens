@@ -83,6 +83,7 @@ export async function listFormats() {
   }
   if (!IS_WIN) return ['text/plain']; // rich-format enumeration is Windows-only
   const { execSync } = await import('child_process');
+  const { writeTmp: wt, rmTmp: rt } = await import('./tmp.js');
   // Use .NET to get all formats. Force an array so a single format doesn't
   // deserialize to a bare string (which callers would iterate char-by-char).
   const script = `
@@ -90,7 +91,11 @@ export async function listFormats() {
     $f = @([System.Windows.Forms.Clipboard]::GetDataObject().GetFormats())
     ConvertTo-Json -InputObject $f
   `;
-  const result = execSync(`powershell -command "${script.replace(/\n/g, '; ')}"`, { encoding: 'utf-8' });
+  const psFile = wt(script, '.ps1');
+  let result;
+  try {
+    result = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${psFile}"`, { encoding: 'utf-8', timeout: 15000 });
+  } finally { rt(psFile); }
   const parsed = JSON.parse(result);
   return Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
 }
@@ -119,9 +124,11 @@ export async function captureFormat(formatName) {
     throw new Error(`Rich clipboard format "${formatName}" capture is Windows-only for now.`);
   }
   const { execSync } = await import('child_process');
+  const { writeTmp: wt, rmTmp: rt } = await import('./tmp.js');
+  const { psq } = await import('./ps.js');
   const script = `
     Add-Type -AssemblyName System.Windows.Forms
-    $data = [System.Windows.Forms.Clipboard]::GetDataObject().GetData('${formatName}')
+    $data = [System.Windows.Forms.Clipboard]::GetDataObject().GetData('${psq(formatName)}')
     if ($data -is [System.IO.MemoryStream]) {
       [Convert]::ToBase64String($data.ToArray())
     } elseif ($data -is [string]) {
@@ -131,7 +138,11 @@ export async function captureFormat(formatName) {
       'UNSUPPORTED_TYPE:' + $data.GetType().FullName
     }
   `;
-  const result = execSync(`powershell -command "${script.replace(/\n/g, '; ')}"`, { encoding: 'utf-8' });
+  const psFile = wt(script, '.ps1');
+  let result;
+  try {
+    result = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${psFile}"`, { encoding: 'utf-8', timeout: 15000, maxBuffer: 64 * 1024 * 1024 });
+  } finally { rt(psFile); }
   return result.trim();
 }
 

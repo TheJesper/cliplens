@@ -513,3 +513,107 @@ mod keycap_tests {
         assert_eq!(keycaps_for("no shortcut here", false), "no shortcut here");
     }
 }
+
+/// What a reminder card shows.
+pub struct ReminderView<'a> {
+    pub title: &'a str,
+    pub subtitle: &'a str,
+    pub agent: &'a str,
+    /// "snoozed 2x" etc, empty when none.
+    pub note: &'a str,
+    pub scale: f64,
+}
+
+/// A reminder card: a real checkbox (the only way to finish it) and three snooze buttons.
+/// Clicking the card body does nothing; clicking OUTSIDE the window is handled by the daemon
+/// (auto-snooze 30 min). The page talks to the daemon with `window.ipc.postMessage`:
+/// `done`, `snooze:5`, `snooze:30`, `snooze:tomorrow`.
+pub fn reminder_html(v: &ReminderView) -> String {
+    let sub = meta_html(v.agent, v.subtitle, false);
+    let note = if v.note.is_empty() {
+        String::new()
+    } else {
+        format!(r#"<span class="chip">{}</span>"#, esc(v.note))
+    };
+    format!(
+        r#"<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
+{base}
+:root{{--scale:{scale};}}
+.wrap{{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;}}
+.toast{{position:relative;display:flex;flex-direction:column;justify-content:center;gap:calc(12px*var(--scale));
+  width:100%;height:100%;box-sizing:border-box;padding:0 calc(24px*var(--scale));
+  background:linear-gradient(135deg,rgba(60,66,66,0.93),rgba(74,54,40,0.93));
+  border-radius:calc(22px*var(--scale));color:#F5EFE8;animation:pop 420ms cubic-bezier(0.22,1,0.36,1);}}
+.top{{display:flex;align-items:center;gap:calc(14px*var(--scale));min-width:0;}}
+.box{{flex:0 0 auto;width:calc(30px*var(--scale));height:calc(30px*var(--scale));box-sizing:border-box;
+  border:2px solid #2AA198;border-radius:calc(9px*var(--scale));background:rgba(255,255,255,0.06);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:calc(20px*var(--scale));color:transparent;}}
+.box:hover{{background:rgba(42,161,152,0.28);color:#2AA198;}}
+.box.on{{background:#2AA198;color:#fff;}}
+.text{{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(4px*var(--scale));}}
+.title{{display:flex;align-items:center;gap:calc(9px*var(--scale));min-width:0;font-size:calc(20px*var(--scale));font-weight:600;line-height:1.15;}}
+.title .t{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+.chip{{flex:0 0 auto;font-size:calc(10px*var(--scale));font-weight:700;text-transform:uppercase;letter-spacing:0.4px;line-height:1;
+  background:rgba(255,255,255,0.16);padding:calc(3px*var(--scale)) calc(7px*var(--scale));border-radius:calc(6px*var(--scale));}}
+.meta{{display:flex;align-items:baseline;gap:calc(6px*var(--scale));min-width:0;font-size:calc(13.5px*var(--scale));color:rgba(235,235,245,0.62);}}
+.meta .who{{flex:0 0 auto;color:#F5EFE8;font-weight:700;}}
+.meta .sep{{flex:0 0 auto;opacity:0.4;}}
+.meta .detail{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+.snooze{{display:flex;align-items:center;gap:calc(8px*var(--scale));padding-left:calc(44px*var(--scale));}}
+.snooze .lbl{{font-size:calc(12px*var(--scale));opacity:0.55;margin-right:calc(2px*var(--scale));}}
+.sn{{cursor:pointer;font:600 calc(12.5px*var(--scale))/1 "Segoe UI",-apple-system,sans-serif;color:#F5EFE8;
+  background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.22);border-radius:calc(8px*var(--scale));
+  padding:calc(6px*var(--scale)) calc(11px*var(--scale));}}
+.sn:hover{{background:rgba(255,255,255,0.22);}}
+{anim}
+</style></head><body><div class="wrap"><div class="toast">
+<div class="top"><div class="box" id="box" role="checkbox" aria-checked="false" aria-label="Done" onclick="this.classList.add('on');this.textContent='\u2713';window.ipc.postMessage('done')">&#10003;</div>
+<div class="text"><div class="title"><span class="t">{title}</span>{note}</div>{sub}</div></div>
+<div class="snooze"><span class="lbl">Snooze</span>
+<button class="sn" onclick="window.ipc.postMessage('snooze:5')">5 min</button>
+<button class="sn" onclick="window.ipc.postMessage('snooze:30')">30 min</button>
+<button class="sn" onclick="window.ipc.postMessage('snooze:tomorrow')">Imorgon</button></div>
+</div></div></body></html>"#,
+        base = BASE_CSS,
+        anim = ANIM_CSS,
+        scale = v.scale,
+        title = esc(v.title),
+        note = note,
+        sub = sub,
+    )
+}
+
+#[cfg(test)]
+mod reminder_tests {
+    use super::*;
+
+    fn view<'a>(title: &'a str) -> ReminderView<'a> {
+        ReminderView { title, subtitle: "", agent: "tooling", note: "", scale: 1.0 }
+    }
+
+    #[test]
+    fn should_offer_a_checkbox_and_the_three_snoozes() {
+        let h = reminder_html(&view("Ring mamma"));
+        assert!(h.contains("role=\"checkbox\""));
+        assert!(h.contains("postMessage('done')"));
+        for s in ["snooze:5", "snooze:30", "snooze:tomorrow"] {
+            assert!(h.contains(s), "missing {s}");
+        }
+    }
+
+    #[test]
+    fn should_not_close_or_post_anything_when_the_card_body_is_clicked() {
+        let h = reminder_html(&view("x"));
+        assert!(!h.contains("class=\"toast\" onclick"));
+    }
+
+    #[test]
+    fn should_escape_html_in_title_and_subtitle() {
+        let mut v = view("<img src=x onerror=alert(1)>");
+        v.subtitle = "<script>alert(2)</script>";
+        let h = reminder_html(&v);
+        assert!(!h.contains("<img src=x"));
+        assert!(!h.contains("<script>alert(2)"));
+        assert!(h.contains("&lt;img"));
+    }
+}

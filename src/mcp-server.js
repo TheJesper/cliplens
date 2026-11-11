@@ -25,7 +25,7 @@ import { captureSnapshot, captureText, listFormats, captureFormat, writeText } f
 import { parseFigmaText } from './lenses/figma.js';
 import { parseMuralHtml } from './lenses/mural.js';
 import { parseTranscript, renderBody } from './lenses/transcript.js';
-import { sendNotify } from './notify.js';
+import { sendNotify, sendRemind, cancelRemind, listReminders } from './notify.js';
 import { appendHistory, latestByAgent, getById, clearHistory, historyEnabled } from './history.js';
 import { setState, clearStateKey, envFlag, readState, imageDir, shouldAskImageDir, configSummary, clipSound, maxImageEdge } from './state.js';
 import { replay } from './replay.js';
@@ -225,7 +225,8 @@ async function saveClipImage({ reading = false, agent, full = false } = {}) {
     // opted into full res. 0/negative edge = no limit. The script downscales
     // proportionally and reports "WxH|origW×origH" so we tell the agent what it got.
     const edge = full ? 0 : maxImageEdge();
-    const outPs = outPath.replace(/\\/g, '\\\\');
+    const { psq } = await import('./ps.js');
+    const outPs = psq(outPath);
     const ps = writeTmp(`
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -524,7 +525,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           emoji: { type: 'string', description: "Override the kind's emoji. Single glyph." },
           accent: { type: 'string', description: 'Override accent color as hex (e.g. "#30D158").' },
           sound: { type: 'string', description: "Opt-in sound: 'success'|'error'|'celebrate', a .wav/.mp3 path, or 'off'. Default 'off' (visual-only)." },
-          position: { type: 'string', enum: ['bottom', 'center', 'top-right', 'top-left', 'bottom-left', 'bottom-right'], description: 'Screen anchor. Default bottom.' },
+          position: { type: 'string', enum: ['bottom', 'center', 'top', 'top-right', 'top-left', 'bottom-left', 'bottom-right'], description: 'Screen anchor. Default bottom.' },
           size: { type: 'string', enum: ['small', 'normal', 'large'], description: 'Card size preset. Default derives from kind (clip=small, celebrate=large, else normal).' },
           width: { type: 'number', description: 'Explicit card width in px. Overrides size width. Clamped 260-720.' },
           height: { type: 'number', description: 'Explicit card height in px. Overrides size height. Clamped 72-320.' },
@@ -537,6 +538,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         required: ['title'],
       },
+    },
+    {
+      name: 'cliplens_remind',
+      description: "Show the user a REMINDER card with a checkbox and snooze buttons, now or at a chosen time. Use for 'remind me at 14:30', 'ping me in 20 min', or when you need the user to tick something off. The card never vanishes silently: only the checkbox completes it; clicking anywhere else snoozes it 30 min; buttons snooze 5 min / 30 min / tomorrow 08:00. It survives restarts (stored in ~/.cliplens/reminders.json) and works with no agent running. Reuse the same `id` to reschedule. Check progress with cliplens_reminders.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'What to remind. Short, <60 chars ideal (max 200).' },
+          subtitle: { type: 'string', description: 'Optional detail line (max 500).' },
+          agent: { type: 'string', description: 'Sending agent name, shown as a badge.' },
+          at: { type: 'string', description: 'When: "HH:MM" (next occurrence, local time), an ISO date-time, or epoch ms. Wins over inSeconds.' },
+          inSeconds: { type: 'number', description: 'Relative delay in seconds. Omit with no `at` for immediately.' },
+          id: { type: 'string', description: 'Stable id; the same open id reschedules instead of adding a second reminder.' },
+          position: { type: 'string', enum: ['top-left', 'top', 'top-right', 'center', 'bottom-left', 'bottom', 'bottom-right'], description: 'Where the card appears. Default bottom-right (or the user\'s CLIPLENS_REMINDER_POSITION).' },
+        },
+        required: ['title'],
+      },
+    },
+    {
+      name: 'cliplens_reminders',
+      description: "List reminders (open and those completed in the last 7 days) from ~/.cliplens/reminders.json: id, title, due time, snooze count, done time. Use to see whether the user ticked something off.",
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'cliplens_remind_cancel',
+      description: 'Cancel (remove) a reminder by id, also closing its card if it is showing.',
+      inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Reminder id from cliplens_reminders or the one you set.' } }, required: ['id'] },
     },
     {
       name: 'cliplens_reclip',
@@ -965,6 +993,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    case 'cliplens_remind': {
+      const a = args || {};
+      const r = sendRemind({ title: a.title, subtitle: a.subtitle, agent: a.agent, id: a.id, inSeconds: a.inSeconds, at: a.at, position: a.position });
+      return { content: [{ type: 'text', text: r.ok ? 'Reminder scheduled (' + (r.message || 'ok') + ').' : 'Reminder NOT scheduled: ' + r.message }] };
+    }
+
+    case 'cliplens_reminders': {
+      const items = listReminders().map((i) => ({
+        id: i.id,
+        title: i.title,
+        agent: i.agent || undefined,
+        due: new Date(i.due_ms).toISOString(),
+        snoozes: i.snoozes,
+        done: i.done_ms ? new Date(i.done_ms).toISOString() : null,
+      }));
+      return { content: [{ type: 'text', text: items.length ? JSON.stringify(items, null, 2) : 'No reminders.' }] };
+    }
+
+    case 'cliplens_remind_cancel': {
+      const r = cancelRemind((args || {}).id);
+      return { content: [{ type: 'text', text: r.ok ? 'Cancel: ' + (r.message || 'ok') : 'Cancel failed: ' + r.message }] };
+    }
+
     case 'cliplens_redo': {
       const a = args || {};
       const entry = latestByAgent(a.agent || '');
@@ -1054,7 +1105,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (action === 'set') {
         if (!a.key) return { content: [{ type: 'text', text: 'Provide `key` (imageDir | askImageDir | remindCache | history) and `value`.' }] };
         const val = boolKeys.has(a.key) ? parseBool(a.value) : String(a.value ?? '');
-        setState(a.key, val);
+        if (!setState(a.key, val)) {
+          return { content: [{ type: 'text', text: `Rejected: ${a.key} is not a known key, or the value is invalid (imageDir must be an absolute path).` }] };
+        }
         return { content: [{ type: 'text', text: `✅ Set ${a.key} = ${JSON.stringify(val)} (local only, ~/.cliplens/state.json). Not committed.` }] };
       }
       if (action === 'clear') {
@@ -1114,6 +1167,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!fatcowRoot) {
           return { content: [{ type: 'text', text: 'Set CLIPLENS_FATCOW_DIR env to your FatCow icon folder to use `icon`, or pass an absolute `path` instead.' }] };
         }
+        if (!/^[\w-]{1,64}$/.test(String(a.icon)) || !/^\d{1,3}$/.test(size)) {
+          return { content: [{ type: 'text', text: 'Invalid icon name or size (letters, digits, - and _ only).' }] };
+        }
         const candidate = pjoin(fatcowRoot, `${size}x${size}`, `${a.icon}.png`);
         if (existsSync(candidate)) {
           imagePath = candidate;
@@ -1126,7 +1182,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       try {
         const agent = a.agent || process.env.CLIPLENS_AGENT || 'cliplens';
-        penImage(imagePath, { record: true, agent });
+        await penImage(imagePath, { record: true, agent });
         clipToast({ op: 'write', format: 'Image', title: 'Bild klar', detail: '', keys: 'Ctrl+V', agent });
         return { content: [{ type: 'text', text: withHint(`🖼️ Image on clipboard (transparency preserved): ${imagePath}. Ctrl+V to paste (Mural/Slack/Teams/Word).`) }] };
       } catch (e) {

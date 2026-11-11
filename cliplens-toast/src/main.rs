@@ -19,6 +19,7 @@
 mod history;
 mod ipc;
 mod preset;
+mod reminder;
 mod ui;
 
 use std::io::{Read, Write};
@@ -32,7 +33,7 @@ use tao::{
 };
 use wry::WebViewBuilder;
 
-use ipc::{Message, NotifyRequest};
+use ipc::{Message, NotifyRequest, RemindRequest};
 use preset::Resolved;
 
 fn main() {
@@ -50,6 +51,12 @@ fn main() {
                 show_toast_oneshot(req);
             }
         }
+        "--remind" => run_remind_cli(&argv),
+        "--remind-cancel" => run_remind_cancel_cli(argv.get(2).cloned().unwrap_or_default()),
+        "--reminders" => println!(
+            "{}",
+            std::fs::read_to_string(reminder::default_path()).unwrap_or_else(|_| "{\"items\":[]}".to_string())
+        ),
         "--ping" => {
             let ok = send_message(&Message::Ping).is_ok();
             println!("{}", if ok { "alive" } else { "down" });
@@ -149,7 +156,17 @@ enum LoopCmd {
     PickerNext,
     /// User clicked a toast card -> dismiss that one (by its internal token).
     DismissToast(u64),
+    /// A button/checkbox on a reminder card: (token, "done" | "snooze:5|30|tomorrow").
+    ToastAction(u64, String),
+    Remind(RemindRequest),
+    RemindCancel(String),
 }
+
+/// Hard limits: a flood of notifications/reminders or connections must not exhaust memory/windows.
+const MAX_ACTIVE: usize = 6;
+const MAX_REMINDER_CARDS: usize = 4;
+const MAX_CONNS: usize = 16;
+const MAX_MSG_BYTES: u64 = 64 * 1024;
 
 fn run_daemon() {
     use global_hotkey::{
@@ -238,10 +255,22 @@ fn run_daemon() {
             Ok(l) => l,
             Err(_) => return,
         };
+        // One short-lived thread per connection, each bounded in size, and a cap on concurrent
+        // connections: a stalled or hostile client can no longer block every other sender.
+        let live = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         for conn in listener.incoming().flatten() {
+            use std::sync::atomic::Ordering::Relaxed;
+            if live.load(Relaxed) >= MAX_CONNS {
+                drop(conn);
+                continue;
+            }
+            live.fetch_add(1, Relaxed);
+            let ipc_proxy = ipc_proxy.clone();
+            let live = live.clone();
+            std::thread::spawn(move || {
             let mut conn = conn;
             let mut buf = String::new();
-            if conn.read_to_string(&mut buf).is_ok() {
+            if (&mut conn).take(MAX_MSG_BYTES).read_to_string(&mut buf).is_ok() {
                 for line in buf.lines() {
                     if line.trim().is_empty() {
                         continue;
@@ -251,14 +280,22 @@ fn run_daemon() {
                             Message::Notify(req) => {
                                 let _ = ipc_proxy.send_event(LoopCmd::Notify(req));
                             }
-                            Message::ShowPicker => {
-                                let _ = ipc_proxy.send_event(LoopCmd::ShowPicker);
-                            }
+                            // Opening the picker over IPC would let any local process grab Esc/Enter
+                            // system-wide and trigger a clipboard overwrite: hotkey only.
+                            Message::ShowPicker => {}
                             Message::Ping => {}
+                            Message::Remind(r) => {
+                                let _ = ipc_proxy.send_event(LoopCmd::Remind(r));
+                            }
+                            Message::RemindCancel { id } => {
+                                let _ = ipc_proxy.send_event(LoopCmd::RemindCancel(id));
+                            }
                         }
                     }
                 }
             }
+            live.fetch_sub(1, Relaxed);
+            });
         }
     });
 
@@ -268,12 +305,25 @@ fn run_daemon() {
     // Monotonic token per toast so a click on a card dismisses exactly that one.
     let mut next_token: u64 = 0;
     let toast_proxy = event_loop.create_proxy();
+    // Reminders: the daemon is the only writer while it runs.
+    let mut store = reminder::Store::open(&reminder::default_path());
+    let mut last_due_check = Instant::now() - Duration::from_secs(10);
+    let mut prev_mouse_down = false;
 
     event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(60));
 
         match event {
             Event::UserEvent(LoopCmd::Notify(req)) => {
+                // Flood guard: at the cap, drop the oldest plain toast; reminders are never evicted.
+                if active.len() >= MAX_ACTIVE {
+                    match active.iter().position(|t| t.reminder_id.is_none()) {
+                        Some(i) => {
+                            active.remove(i);
+                        }
+                        None => return,
+                    }
+                }
                 // Resolve the effective sound (explicit wins, else kind default,
                 // else silent). Visual-first: empty/off => no sound.
                 let sound = effective_sound(&req);
@@ -300,7 +350,40 @@ fn run_daemon() {
                 }
             }
             Event::UserEvent(LoopCmd::DismissToast(token)) => {
-                active.retain(|t| t.token != token);
+                // Reminder cards are never dismissed by a plain click: only their controls act.
+                active.retain(|t| t.token != token || t.reminder_id.is_some());
+            }
+            Event::UserEvent(LoopCmd::Remind(req)) => {
+                let now = reminder::now_ms();
+                if let Ok(id) = reminder::apply_remind(&mut store, req, now) {
+                    let _ = store.save();
+                    // Rescheduled while showing: drop the old card; the due check re-shows it.
+                    active.retain(|t| t.reminder_id.as_deref() != Some(id.as_str()));
+                    last_due_check = Instant::now() - Duration::from_secs(10);
+                }
+            }
+            Event::UserEvent(LoopCmd::RemindCancel(id)) => {
+                if store.cancel(&id) {
+                    let _ = store.save();
+                }
+                active.retain(|t| t.reminder_id.as_deref() != Some(id.as_str()));
+            }
+            Event::UserEvent(LoopCmd::ToastAction(token, body)) => {
+                let now = reminder::now_ms();
+                if let Some(pos) = active.iter().position(|t| t.token == token) {
+                    if let Some(id) = active[pos].reminder_id.clone() {
+                        if body == "done" {
+                            store.complete(&id, now);
+                            let _ = store.save();
+                            active.remove(pos);
+                        } else if let Some(sn) = body.strip_prefix("snooze:").and_then(reminder::Snooze::parse) {
+                            let due = reminder::snooze_due(sn, now, reminder::local_utc_offset_s());
+                            store.snooze(&id, due);
+                            let _ = store.save();
+                            active.remove(pos);
+                        }
+                    }
+                }
             }
             Event::UserEvent(LoopCmd::ShowPicker) => {
                 if let Some(p) = &mut picker {
@@ -349,8 +432,69 @@ fn run_daemon() {
             _ => {}
         }
 
-        // Expire finished toasts.
-        active.retain(|t| t.start.elapsed() < t.duration);
+        // Expire finished toasts. Reminders never expire; sticky cards have a 15 min hard cap.
+        active.retain(|t| {
+            if t.reminder_id.is_some() {
+                true
+            } else if t.sticky {
+                t.start.elapsed() < Duration::from_secs(900)
+            } else {
+                t.start.elapsed() < t.duration
+            }
+        });
+
+        // Show reminders that have come due.
+        if last_due_check.elapsed() >= Duration::from_millis(500) {
+            last_due_check = Instant::now();
+            let now = reminder::now_ms();
+            for id in store.due(now) {
+                if active.iter().filter(|t| t.reminder_id.is_some()).count() >= MAX_REMINDER_CARDS {
+                    break; // the rest stay due and appear as cards are cleared
+                }
+                if active.iter().any(|t| t.reminder_id.as_deref() == Some(id.as_str())) {
+                    continue;
+                }
+                if let Some(r) = store.get(&id).cloned() {
+                    let token = next_token;
+                    next_token = next_token.wrapping_add(1);
+                    if let Some(t) = ActiveToast::spawn_reminder(target, &r, active.len(), token, toast_proxy.clone()) {
+                        active.push(t);
+                    }
+                }
+            }
+            // Forget completed reminders after a week.
+            let before = store.items.len();
+            store.prune(now);
+            if store.items.len() != before {
+                let _ = store.save();
+            }
+        }
+
+        // Click anywhere outside the cards: reminders snooze 30 min (never vanish), sticky
+        // notices close. A click inside ANY card is not "outside" for the others.
+        let down = left_mouse_down();
+        let rising = down && !prev_mouse_down;
+        prev_mouse_down = down;
+        if rising && !active.iter().any(|t| cursor_inside(&t._window)) {
+            let now = reminder::now_ms();
+            let mut closed: Vec<u64> = Vec::new();
+            for t in active.iter() {
+                if t.start.elapsed() < Duration::from_millis(600) {
+                    continue; // the click that summoned it
+                }
+                if let Some(id) = &t.reminder_id {
+                    let due = reminder::snooze_due(reminder::Snooze::Min30, now, 0);
+                    store.snooze(id, due);
+                    closed.push(t.token);
+                } else if t.sticky {
+                    closed.push(t.token);
+                }
+            }
+            if !closed.is_empty() {
+                let _ = store.save();
+                active.retain(|t| !closed.contains(&t.token));
+            }
+        }
 
         // Picker timeout -> commit selection, and release the key grabs.
         if let Some(p) = &mut picker {
@@ -375,6 +519,9 @@ struct ActiveToast {
     duration: Duration,
     id: String,
     token: u64,
+    /// Some(..) for reminder cards (checkbox + snooze).
+    reminder_id: Option<String>,
+    sticky: bool,
 }
 
 /// Build the resolved view, scaled window box, and HTML for a request.
@@ -427,6 +574,48 @@ impl ActiveToast {
             duration: Duration::from_millis(resolved.duration),
             id: req.id.clone(),
             token,
+            reminder_id: None,
+            sticky: req.sticky,
+        })
+    }
+
+    /// A reminder card: checkbox + snooze buttons. Never auto-closes.
+    fn spawn_reminder(
+        target: &tao::event_loop::EventLoopWindowTarget<LoopCmd>,
+        r: &reminder::Reminder,
+        stack_index: usize,
+        token: u64,
+        proxy: tao::event_loop::EventLoopProxy<LoopCmd>,
+    ) -> Option<Self> {
+        let (w, h) = (480.0, 132.0);
+        let note = if r.snoozes > 0 { format!("snoozad {}x", r.snoozes) } else { String::new() };
+        let html = ui::reminder_html(&ui::ReminderView {
+            title: &r.title,
+            subtitle: &r.subtitle,
+            agent: &r.agent,
+            note: &note,
+            scale: 1.0,
+        });
+        let window = build_window(target, w, h, true)?;
+        position_window(&window, reminder::position_or_default(&r.position), w, h, stack_index, "");
+        let webview = WebViewBuilder::new(&window)
+            .with_transparent(true)
+            .with_html(html)
+            .with_ipc_handler(move |req| {
+                let _ = proxy.send_event(LoopCmd::ToastAction(token, req.body().to_string()));
+            })
+            .build()
+            .ok()?;
+        window.set_visible(true);
+        Some(ActiveToast {
+            _window: window,
+            webview,
+            start: Instant::now(),
+            duration: Duration::from_secs(0),
+            id: String::new(),
+            token,
+            reminder_id: Some(r.id.clone()),
+            sticky: true,
         })
     }
 
@@ -594,7 +783,7 @@ fn position_window(
     // Vertical anchor. Bottom anchors stack upward; top anchors stack downward.
     let y = match position {
         "center" => mon_y + (mon_h - h) / 2.0,
-        "top-left" | "top-right" => mon_y + margin + stack_offset,
+        "top-left" | "top-right" | "top" => mon_y + margin + stack_offset,
         "bottom-left" | "bottom-right" => mon_y + mon_h - h - margin - stack_offset,
         _ => mon_y + mon_h * 0.82 - h / 2.0 - stack_offset, // "bottom" (default)
     };
@@ -727,34 +916,55 @@ fn effective_sound(req: &NotifyRequest) -> String {
     resolved.default_sound
 }
 
+/// Resolve a requested sound to a file, or None. SECURITY: the request is untrusted (IPC), so:
+/// a NAME may only be [a-z0-9_-] and maps to <exe dir>/sounds/<name>.wav; a PATH must be local
+/// and absolute (no UNC / network share: opening one leaks credentials and blocks the UI thread)
+/// with a .wav (or .mp3 off Windows) extension.
+fn resolve_sound_path(sound: &str, exe_dir: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    let s = sound.trim();
+    if s.is_empty() || s == "off" || s.len() > 260 || s.chars().any(|c| c.is_control()) {
+        return None;
+    }
+    let lower = s.to_lowercase();
+    let is_path = s.contains('/') || s.contains('\\') || lower.ends_with(".wav") || lower.ends_with(".mp3");
+    if !is_path {
+        if !s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+            return None;
+        }
+        let p = exe_dir?.join("sounds").join(format!("{}.wav", s));
+        return if p.exists() { Some(p) } else { None };
+    }
+    if s.starts_with("\\\\") || s.starts_with("//") {
+        return None; // UNC / network path
+    }
+    let p = std::path::PathBuf::from(s);
+    if !p.is_absolute() {
+        return None;
+    }
+    let ok_ext = lower.ends_with(".wav") || (!cfg!(windows) && lower.ends_with(".mp3"));
+    if !ok_ext || !p.is_file() {
+        return None;
+    }
+    Some(p)
+}
+
 /// Play a named or file-path sound. Best-effort, never blocks the loop for long.
 fn play_sound(sound: &str) {
-    if sound.is_empty() || sound == "off" {
-        return;
-    }
-    // Resolve named sounds to bundled files next to the binary: sounds/<name>.wav
-    let path = if sound.ends_with(".wav") || sound.ends_with(".mp3") {
-        std::path::PathBuf::from(sound)
-    } else if let Ok(exe) = std::env::current_exe() {
-        exe.parent()
-            .map(|d| d.join("sounds").join(format!("{}.wav", sound)))
-            .unwrap_or_default()
-    } else {
-        return;
+    let exe_dir = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.to_path_buf()));
+    let path = match resolve_sound_path(sound, exe_dir.as_deref()) {
+        Some(p) => p,
+        None => return,
     };
-    if !path.exists() {
-        return;
-    }
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         // CREATE_NO_WINDOW (0x08000000) so PowerShell's WAV playback never flashes a console.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         // Use PowerShell's SoundPlayer for WAV (no extra deps).
-        let p = path.to_string_lossy().replace('\'', "''");
-        let script = format!("(New-Object Media.SoundPlayer '{}').PlaySync();", p);
+        // The path travels in an environment variable, never inside the script text.
         let _ = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
+            .env("CLIPLENS_SND", &path)
+            .args(["-NoProfile", "-Command", "(New-Object Media.SoundPlayer $env:CLIPLENS_SND).PlaySync();"])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn();
     }
@@ -850,6 +1060,156 @@ fn show_toast_oneshot(req: NotifyRequest) {
             *control_flow = ControlFlow::Exit;
         }
     });
+}
+
+// ----- reminders: CLI + outside-click detection -------------------------
+
+fn parse_remind_args(argv: &[String]) -> RemindRequest {
+    let mut r = RemindRequest::default();
+    let mut i = 2;
+    while i < argv.len() {
+        let val = argv.get(i + 1).cloned().unwrap_or_default();
+        match argv[i].as_str() {
+            "--title" => r.title = val,
+            "--subtitle" => r.subtitle = val,
+            "--agent" => r.agent = val,
+            "--id" => r.id = val,
+            "--position" => r.position = val,
+            "--at" => r.at_ms = val.parse().unwrap_or(0),
+            "--in" => r.in_s = val.parse().unwrap_or(0),
+            _ => {}
+        }
+        i += 2;
+    }
+    if r.agent.trim().is_empty() {
+        if let Ok(a) = std::env::var("CLIPLENS_AGENT") {
+            r.agent = a;
+        }
+    }
+    r
+}
+
+fn run_remind_cli(argv: &[String]) {
+    let req = parse_remind_args(argv);
+    if req.title.trim().is_empty() {
+        eprintln!("--title is required");
+        std::process::exit(2);
+    }
+    if send_message(&Message::Remind(req.clone())).is_ok() {
+        println!("sent");
+        return;
+    }
+    // No daemon: persist, then start one so it fires on time.
+    let path = reminder::default_path();
+    let mut store = reminder::Store::open(&path);
+    match reminder::apply_remind(&mut store, req, reminder::now_ms()).and_then(|id| store.save().map(|_| id).map_err(|_| "could not write the reminder file")) {
+        Ok(id) => {
+            spawn_daemon_detached();
+            println!("saved {id}; daemon started");
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_remind_cancel_cli(id: String) {
+    if id.trim().is_empty() {
+        eprintln!("usage: --remind-cancel <id>");
+        std::process::exit(2);
+    }
+    if send_message(&Message::RemindCancel { id: id.clone() }).is_ok() {
+        println!("sent");
+        return;
+    }
+    let mut store = reminder::Store::open(&reminder::default_path());
+    println!("{}", if store.cancel(&id) && store.save().is_ok() { "cancelled" } else { "not found" });
+}
+
+fn spawn_daemon_detached() {
+    if let Ok(exe) = std::env::current_exe() {
+        let mut c = std::process::Command::new(exe);
+        c.arg("--watch")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            c.creation_flags(0x0000_0008 | 0x0800_0000); // DETACHED_PROCESS | CREATE_NO_WINDOW
+        }
+        let _ = c.spawn();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn left_mouse_down() -> bool {
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetAsyncKeyState(vkey: i32) -> i16;
+    }
+    unsafe { (GetAsyncKeyState(0x01) as u16) & 0x8000 != 0 }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn left_mouse_down() -> bool {
+    false // outside-click detection is Windows-only for now: cards stay until acted on
+}
+
+#[cfg(target_os = "windows")]
+fn cursor_inside(window: &Window) -> bool {
+    use std::os::raw::c_long;
+    #[repr(C)]
+    struct Point {
+        x: c_long,
+        y: c_long,
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetCursorPos(p: *mut Point) -> i32;
+    }
+    let mut pt = Point { x: 0, y: 0 };
+    if unsafe { GetCursorPos(&mut pt) } == 0 {
+        return true; // unknown => treat as inside so we never snooze by mistake
+    }
+    match (window.outer_position(), window.outer_size()) {
+        (Ok(p), s) => {
+            let (x, y) = (pt.x as i64, pt.y as i64);
+            x >= p.x as i64 && x < p.x as i64 + s.width as i64 && y >= p.y as i64 && y < p.y as i64 + s.height as i64
+        }
+        _ => true,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cursor_inside(_window: &Window) -> bool {
+    true
+}
+
+#[cfg(test)]
+mod sound_tests {
+    use super::resolve_sound_path;
+    use std::path::Path;
+
+    #[test]
+    fn should_refuse_unc_relative_odd_extension_and_weird_names() {
+        for bad in ["\\\\evil\\share\\x.wav", "//evil/share/x.wav", "..\\x.wav", "x.wav", "C:\\Windows\\win.ini", "Evil Name", "a'b", "../../x", "off", ""] {
+            assert!(resolve_sound_path(bad, Some(Path::new("."))).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn should_accept_an_existing_absolute_wav_only() {
+        let dir = std::env::temp_dir().join(format!("cl-snd-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sounds")).unwrap();
+        std::fs::write(dir.join("sounds").join("ding.wav"), b"RIFF").unwrap();
+        let abs = dir.join("sounds").join("ding.wav");
+        assert_eq!(resolve_sound_path(abs.to_str().unwrap(), None), Some(abs.clone()));
+        assert_eq!(resolve_sound_path("ding", Some(&dir)), Some(abs));
+        assert!(resolve_sound_path("missing", Some(&dir)).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]

@@ -191,3 +191,22 @@ review it. See [CONTRIBUTING.md](CONTRIBUTING.md). This is open source (MIT) and
 
 Icons: [FatCow Farm-Fresh Web Icons](https://www.fatcow.com/free-icons) — licensed under
 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
+
+## Reminders (checkbox + schedule + snooze)
+
+A card with a checkbox and snooze buttons, shown now or at a chosen time. The daemon owns the
+schedule in `~/.cliplens/reminders.json` (survives restart/hibernate; started automatically).
+
+- Only the **checkbox** completes a reminder. Clicking **anywhere else** (outside the card) snoozes it **30 min** - it never vanishes silently.
+- Buttons: **5 min**, **30 min**, **Imorgon** (08:00 next workday; Fri/Sat/Sun -> Monday).
+- Position: `top-left | top | top-right | center | bottom-left | bottom | bottom-right` (default bottom-right; set per reminder or `CLIPLENS_REMINDER_POSITION`).
+- MCP: `cliplens_remind` (title, at "HH:MM"/ISO/epoch, inSeconds, id, position), `cliplens_reminders` (list, incl. done in the last 7 days), `cliplens_remind_cancel`.
+- CLI: `cliplens-daemon --remind --title "..." [--at HH:MM-as-epoch-ms | --in SECONDS] [--position top] [--id x]`, `--remind-cancel <id>`, `--reminders`.
+- Outside-click detection is Windows-only for now; elsewhere the card stays until acted on.
+
+## Security notes
+
+- Text that reaches PowerShell is quoted with `src/ps.js` (`psq`), which also covers the smart quotes PowerShell treats as quote characters. Do not interpolate untrusted text into script text any other way.
+- The installer only auto-approves `cliplens_ping`. Clipboard reads stay behind your client's approval prompt.
+- The daemon limits message size, concurrent connections, visible cards and durations, accepts only hex accent colours, and plays only bundled named sounds or local absolute `.wav` files (no network paths).
+- A full review lives in the maintainer's notes; known open items: pipe identity check, WebView CSP, release artefact signing.

@@ -147,6 +147,9 @@ export function mcpEntry(repoRoot) {
     command: 'node',
     args: [join(repoRoot, 'src', 'mcp-server.js')],
     env: {},
-    autoApprove: ['cliplens_ping', 'cliplens_text', 'cliplens_formats', 'cliplens_capture', 'cliplens_analyze'],
+    // Only the harmless ping is auto-approved. Clipboard READS (text/capture/analyze) stay behind the
+    // client's approval prompt: the clipboard often holds passwords/OTPs and a prompt-injected agent
+    // must not be able to read it silently.
+    autoApprove: ['cliplens_ping'],
   };
 }

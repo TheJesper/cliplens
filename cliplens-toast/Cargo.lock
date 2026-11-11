@@ -193,6 +193,7 @@ dependencies = [
  "dirs",
  "global-hotkey",
  "interprocess",
+ "libc",
  "serde",
  "serde_json",
  "tao",

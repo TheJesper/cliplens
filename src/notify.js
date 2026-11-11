@@ -9,11 +9,13 @@
  *   CLIPLENS_ICON   -- path to .ico/.png (rendered as WPF Image instead of emoji)
  *   CLIPLENS_SOUND  -- path to .mp3/.wav, or "off" to disable
  */
-import { spawn } from 'child_process';
-import { existsSync, readdirSync, writeFileSync, unlinkSync } from 'fs';
+import { spawn, spawnSync } from 'child_process';
+import { existsSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
-import { tmpdir } from 'os';
+import { tmpdir, homedir } from 'os';
 import { fileURLToPath } from 'url';
+import { psq } from './ps.js';
+import { writeTmp, rmTmp } from './tmp.js';
 
 const IS_WIN = process.platform === 'win32';
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -196,7 +198,7 @@ export function sendNotify({
  */
 function notifyNativeToast(title = 'ClipLens', message = 'Clip ready') {
   try {
-    const esc = (s) => String(s).replace(/'/g, "''");
+    const esc = psq; // all five quote characters, not just ASCII '
     const ps = `$ErrorActionPreference='SilentlyContinue'
 $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
 $t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
@@ -207,13 +209,12 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($t)
 $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe'
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)`;
     // UTF-8 BOM so PowerShell reads emoji/Unicode correctly.
-    const psFile = join(tmpdir(), `cliplens-toast-${Date.now()}.ps1`);
-    writeFileSync(psFile, '﻿' + ps, 'utf-8');
+    const psFile = writeTmp('﻿' + ps, '.ps1'); // random name, owner-only
     const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', psFile], {
       detached: true, stdio: 'ignore', windowsHide: true,
     });
     child.unref();
-    setTimeout(() => { try { unlinkSync(psFile); } catch {} }, 8000).unref?.();
+    setTimeout(() => rmTmp(psFile), 8000).unref?.();
   } catch {
     // notifications must never break the caller
   }
@@ -397,3 +398,90 @@ Add-Type -TypeDefinition $cs -ReferencedAssemblies PresentationFramework,Present
 }
 
 export default notify;
+
+// ---------------------------------------------------------------------------
+// Reminders: a card with a checkbox + snooze (5 min / 30 min / tomorrow), shown at a chosen
+// time. The daemon owns the schedule (~/.cliplens/reminders.json). A reminder never vanishes
+// silently: only the checkbox completes it; clicking elsewhere snoozes it 30 min.
+// ---------------------------------------------------------------------------
+
+/** "14:30" (next occurrence, local), an ISO date-time, or epoch ms -> epoch ms. Throws on junk. */
+export function parseWhen(at, now = Date.now()) {
+  if (typeof at === 'number' && Number.isFinite(at) && at > 0) return Math.round(at);
+  const s = String(at ?? '').trim();
+  const hm = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (hm) {
+    const h = Number(hm[1]);
+    const m = Number(hm[2]);
+    if (h > 23 || m > 59) throw new Error('invalid time: ' + s);
+    const d = new Date(now);
+    d.setHours(h, m, 0, 0);
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  const t = Date.parse(s);
+  if (!Number.isFinite(t) || Math.abs(t) > 8.64e15) throw new Error('invalid time: ' + (s || '(empty)') + ' (use HH:MM, an ISO date-time or epoch ms)');
+  return t;
+}
+
+const REMIND_POSITIONS = ['top-left', 'top', 'top-right', 'center', 'bottom-left', 'bottom', 'bottom-right'];
+
+export function remindersPath() {
+  return join(homedir(), '.cliplens', 'reminders.json');
+}
+
+/** All reminders on disk (open and recently done). */
+export function listReminders() {
+  try {
+    const j = JSON.parse(readFileSync(remindersPath(), 'utf8'));
+    // Drop malformed/tampered entries so one bad row cannot break the listing.
+    return Array.isArray(j.items)
+      ? j.items.filter((i) => i && typeof i.id === 'string' && Number.isFinite(i.due_ms) && Math.abs(i.due_ms) < 8.64e15)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function runDaemon(args) {
+  const bin = findToastBinary();
+  if (!bin) return { ok: false, message: 'cliplens-daemon is not built (cargo build --release in cliplens-toast)' };
+  const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 8000, windowsHide: true });
+  if (r.error) return { ok: false, message: String(r.error.message || r.error) };
+  return { ok: r.status === 0, message: ((r.stdout || '') + (r.stderr || '')).trim() };
+}
+
+/**
+ * Schedule a reminder.
+ * @param {object} o
+ * @param {string} o.title
+ * @param {string} [o.subtitle]
+ * @param {string} [o.agent]
+ * @param {string} [o.id]          - same open id = reschedule.
+ * @param {number} [o.inSeconds]   - relative; 0/absent with no `at` = right now.
+ * @param {string|number} [o.at]   - "HH:MM" | ISO | epoch ms (wins over inSeconds).
+ * @param {string} [o.position]    - top-left|top|top-right|center|bottom-left|bottom|bottom-right (default bottom-right, or CLIPLENS_REMINDER_POSITION).
+ */
+export function sendRemind({ title, subtitle = '', agent, id, inSeconds, at, position } = {}) {
+  if (!title || !String(title).trim()) return { ok: false, message: '`title` is required' };
+  if (id && !/^[\w.-]{1,64}$/.test(String(id))) return { ok: false, message: '`id` may only contain letters, digits, . _ - (max 64)' };
+  if (position && !REMIND_POSITIONS.includes(String(position))) return { ok: false, message: 'invalid `position` (one of ' + REMIND_POSITIONS.join(', ') + ')' };
+  // Values are passed after their flag; clamp lengths here (the daemon clamps again).
+  const clamp = (s, n) => String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').slice(0, n);
+  const args = ['--remind', '--title', clamp(title, 200), '--agent', clamp(agent || process.env.CLIPLENS_AGENT || '', 40)];
+  if (subtitle) args.push('--subtitle', clamp(subtitle, 500));
+  if (id) args.push('--id', String(id));
+  if (position) args.push('--position', String(position));
+  try {
+    if (at !== undefined && at !== null && String(at) !== '') args.push('--at', String(parseWhen(at)));
+    else if (Number(inSeconds) > 0) args.push('--in', String(Math.floor(Number(inSeconds))));
+  } catch (e) {
+    return { ok: false, message: e.message };
+  }
+  return runDaemon(args);
+}
+
+export function cancelRemind(id) {
+  if (!id || !String(id).trim()) return { ok: false, message: '`id` is required' };
+  return runDaemon(['--remind-cancel', String(id)]);
+}

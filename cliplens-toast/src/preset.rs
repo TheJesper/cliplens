@@ -31,6 +31,17 @@ pub const SCALE_MAX: f64 = 1.6;
 
 /// Hard cap for a `progress` card that is never completed (spec §10.5).
 pub const PROGRESS_MAX_MS: u64 = 90_000;
+/// Longest a caller may ask a non-sticky card to stay (2 min).
+pub const DURATION_MAX_MS: u64 = 120_000;
+
+/// #RGB, #RRGGBB or #RRGGBBAA.
+pub fn is_hex_color(s: &str) -> bool {
+    let h = match s.strip_prefix('#') {
+        Some(h) => h,
+        None => return false,
+    };
+    matches!(h.len(), 3 | 6 | 8) && h.chars().all(|c| c.is_ascii_hexdigit())
+}
 
 /// Base table: (emoji, accent, duration_ms, default_sound).
 fn base(kind: &str) -> (&'static str, &'static str, u64, &'static str) {
@@ -78,15 +89,18 @@ pub fn resolve_kind(
     } else {
         emoji_override.trim().to_string()
     };
-    let accent = if accent_override.trim().is_empty() {
-        accent.to_string()
-    } else {
+    // Accent goes into CSS: only #RGB / #RRGGBB / #RRGGBBAA is accepted, anything else falls
+    // back to the preset (CSS injection / url() beacons).
+    let accent = if is_hex_color(accent_override.trim()) {
         accent_override.trim().to_string()
+    } else {
+        accent.to_string()
     };
+    // Clamp: a caller-supplied duration can never keep a card alive for days.
     let duration = if duration_override == 0 {
         duration
     } else {
-        duration_override
+        duration_override.min(DURATION_MAX_MS)
     };
 
     Resolved {
@@ -250,5 +264,28 @@ mod tests {
         assert_eq!(parse_offset("garbage"), (0.0, 0.0));
         assert_eq!(parse_offset(""), (0.0, 0.0));
         assert_eq!(parse_offset("7"), (7.0, 0.0));
+    }
+}
+
+#[cfg(test)]
+mod hardening_tests {
+    use super::*;
+
+    #[test]
+    fn should_accept_only_hex_colours_for_accent() {
+        assert!(is_hex_color("#abc") && is_hex_color("#30D158") && is_hex_color("#30D15880"));
+        for bad in ["", "red", "#12", "#12345", "#gggggg", "#fff;}</style>", "url(http://x)", "#fff) url(x"] {
+            assert!(!is_hex_color(bad), "{bad}");
+        }
+        let r = resolve_kind("info", "", "red;}body{display:none", 0);
+        assert_eq!(r.accent, "#0A84FF");
+        let r = resolve_kind("info", "", "#123456", 0);
+        assert_eq!(r.accent, "#123456");
+    }
+
+    #[test]
+    fn should_clamp_a_huge_duration() {
+        let r = resolve_kind("info", "", "", u64::MAX);
+        assert_eq!(r.duration, DURATION_MAX_MS);
     }
 }

@@ -41,7 +41,8 @@ export function historyEnabled() {
 /** TTL in minutes (default 60). 0 or negative disables expiry. */
 function ttlMinutes() {
   const n = Number(process.env.CLIPLENS_HISTORY_TTL_MIN);
-  return Number.isFinite(n) ? n : 60;
+  // 0 / negative / absurd values must not disable expiry: clamp to 1..1440 minutes.
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1440) : 60;
 }
 
 export function historyDir() {
@@ -77,7 +78,7 @@ export function readHistory() {
       // Rewrite the pruned list (or remove the file entirely if empty).
       try {
         if (alive.length === 0) rmSync(historyPath(), { force: true });
-        else writeFileSync(historyPath(), JSON.stringify({ entries: alive }, null, 2), 'utf-8');
+        else writeFileSync(historyPath(), JSON.stringify({ entries: alive }, null, 2), { encoding: 'utf-8', mode: 0o600 });
       } catch { /* best-effort */ }
     }
     return alive;
@@ -118,7 +119,7 @@ export function appendHistory({ format = 'plain', text, imagePath, title = '', a
     if (!hasText && !hasImage) return null;
 
     const dir = historyDir();
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
 
     const entries = readHistory(); // already purges expired
 
@@ -137,7 +138,7 @@ export function appendHistory({ format = 'plain', text, imagePath, title = '', a
 
     entries.unshift(entry);
     const trimmed = entries.slice(0, MAX_ENTRIES);
-    writeFileSync(historyPath(), JSON.stringify({ entries: trimmed }, null, 2), 'utf-8');
+    writeFileSync(historyPath(), JSON.stringify({ entries: trimmed }, null, 2), { encoding: 'utf-8', mode: 0o600 });
     return entry.id;
   } catch {
     return null; // never let history writing break the clip op

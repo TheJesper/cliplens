@@ -101,14 +101,40 @@ impl Default for NotifyRequest {
     }
 }
 
+/// Ask the daemon to show a reminder (a checkbox card) now or at a later time.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RemindRequest {
+    /// Caller-chosen id (so it can be cancelled later); empty => daemon generates one.
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: String,
+    #[serde(default)]
+    pub agent: String,
+    /// Absolute due time, unix ms. 0 => use `in_s`.
+    #[serde(default)]
+    pub at_ms: i64,
+    /// Seconds from now (used when `at_ms` is 0). 0 => due immediately.
+    #[serde(default)]
+    pub in_s: u64,
+    /// Where the card appears: top-left | top | top-right | center | bottom-left | bottom |
+    /// bottom-right. Empty/unknown => CLIPLENS_REMINDER_POSITION, else bottom-right.
+    #[serde(default)]
+    pub position: String,
+}
+
 /// Control messages the daemon understands (title acts as a command channel
 /// for internal use, but we keep a dedicated enum for clarity/future use).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "msg", rename_all = "snake_case")]
 pub enum Message {
     Notify(NotifyRequest),
     ShowPicker,
     Ping,
+    Remind(RemindRequest),
+    RemindCancel { id: String },
 }
 
 /// Platform-appropriate socket name.
@@ -121,4 +147,39 @@ pub fn socket_name() -> String {
 pub fn socket_name() -> String {
     let base = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
     format!("{}/cliplens-daemon.sock", base.trim_end_matches('/'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_roundtrip_remind_and_cancel_messages() {
+        let mut r = RemindRequest::default();
+        r.title = "ring mamma".into();
+        r.in_s = 600;
+        let line = serde_json::to_string(&Message::Remind(r)).unwrap();
+        match serde_json::from_str::<Message>(&line).unwrap() {
+            Message::Remind(x) => assert_eq!((x.title.as_str(), x.in_s), ("ring mamma", 600)),
+            other => panic!("{other:?}"),
+        }
+        let line = serde_json::to_string(&Message::RemindCancel { id: "r1".into() }).unwrap();
+        assert!(matches!(serde_json::from_str::<Message>(&line).unwrap(), Message::RemindCancel { .. }));
+    }
+
+    #[test]
+    fn should_roundtrip_a_notify_that_carries_its_own_kind_field() {
+        let mut req = NotifyRequest::default();
+        req.title = "hej".into();
+        req.kind = "success".into();
+        let line = serde_json::to_string(&Message::Notify(req)).unwrap();
+        println!("{line}");
+        match serde_json::from_str::<Message>(&line) {
+            Ok(Message::Notify(r)) => {
+                assert_eq!(r.title, "hej");
+                assert_eq!(r.kind, "success");
+            }
+            other => panic!("did not roundtrip: {other:?} from {line}"),
+        }
+    }
 }

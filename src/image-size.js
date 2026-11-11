@@ -17,6 +17,7 @@ import { execSync, execFileSync } from 'child_process';
 import { existsSync, writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { psq } from './ps.js';
 import crypto from 'crypto';
 
 const IS_WIN = process.platform === 'win32';
@@ -61,8 +62,8 @@ export function downscaleImageFile(srcPath, destPath, edge) {
 
 /** Windows: System.Drawing load + HighQualityBicubic downscale. */
 function runWinResize(srcPath, destPath, cap) {
-  const src = srcPath.replace(/\\/g, '\\\\');
-  const dst = destPath.replace(/\\/g, '\\\\');
+  const src = psq(srcPath);
+  const dst = psq(destPath);
   const tmpPs = join(tmpdir(), `cliplens-resize-${crypto.randomUUID()}.ps1`);
   writeFileSync(tmpPs, `
 Add-Type -AssemblyName System.Drawing

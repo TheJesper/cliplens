@@ -23,7 +23,7 @@
  *   3. built-in default             -- safe / privacy-first, matches the repo
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
-import { join } from 'path';
+import { join, isAbsolute } from 'path';
 import { homedir } from 'os';
 
 /**
@@ -61,11 +61,19 @@ export function readState() {
 /** Write one key into local state (merges, never clobbers other keys). */
 export function setState(key, value) {
   try {
+    // Only known keys; the value must have the declared type. imageDir must be an absolute path
+    // with no control characters (it ends up in file paths and scripts).
+    const spec = Object.prototype.hasOwnProperty.call(CONFIG_KEYS, key) ? CONFIG_KEYS[key] : null;
+    if (!spec) return false;
+    if (spec.kind === 'bool' && typeof value !== 'boolean') return false;
+    if (spec.kind === 'number' && !Number.isFinite(Number(value))) return false;
+    if (spec.kind === 'string' && (typeof value !== 'string' || value.length > 300 || /[\u0000-\u001F\u007F]/.test(value))) return false;
+    if (key === 'imageDir' && !isAbsolute(value)) return false;
     const dir = stateDir();
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
     const cur = readState();
     cur[key] = value;
-    writeFileSync(statePath(), JSON.stringify(cur, null, 2), 'utf-8');
+    writeFileSync(statePath(), JSON.stringify(cur, null, 2), { encoding: 'utf-8', mode: 0o600 });
     return true;
   } catch {
     return false;
