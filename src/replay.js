@@ -75,7 +75,7 @@ function runNode(script, text) {
   const tmp = join(tmpdir(), `cliplens-replay-${Date.now()}.md`);
   writeFileSync(tmp, text, 'utf-8');
   try {
-    execSync(`node "${join(__dirname, script)}" --file "${tmp}"`, { encoding: 'utf-8' });
+    execSync(`node "${join(__dirname, script)}" --file "${tmp}"`, { encoding: 'utf-8', env: { ...process.env, CLIPLENS_NO_TOAST: '1' } }); // caller shows the one popup
   } finally {
     try { unlinkSync(tmp); } catch { /* ignore */ }
   }

@@ -147,6 +147,9 @@ export function sendNotify({
   sticky,
   keys,
 } = {}) {
+  // A parent process that already shows the popup (the MCP server runs the pen scripts as
+  // children) sets CLIPLENS_NO_TOAST=1 so one clip never produces two popups.
+  if (process.env.CLIPLENS_NO_TOAST === '1') return 'noop';
   try {
     const bin = findToastBinary();
     if (!bin) {

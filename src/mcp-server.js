@@ -831,7 +831,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { writeTmp, rmTmp } = await import('./tmp.js');
       const tmpMd = writeTmp(args.markdown, '.md');
       try {
-        execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
+        execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8', env: { ...process.env, CLIPLENS_NO_TOAST: '1' } });
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'slack', agent });
         clipToast({ op: 'write', format: 'Slack', title: 'Slack-clip klar', detail: 'i Slack', keys: 'Ctrl+V', agent });
@@ -849,7 +849,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { writeTmp, rmTmp } = await import('./tmp.js');
       const tmpMd = writeTmp(args.markdown, '.md');
       try {
-        execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' });
+        execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8', env: { ...process.env, CLIPLENS_NO_TOAST: '1' } });
         const agent = (args.agent || process.env.CLIPLENS_AGENT || 'cliplens');
         const clipId = appendHistory({ text: args.markdown, format: 'html', agent });
         clipToast({ op: 'write', format: 'Teams', title: 'Teams-clip klar', detail: 'i Teams', keys: 'Ctrl+V', agent });
@@ -1030,10 +1030,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         if (fmt === 'slack') {
           const tmpMd = writeTmp(entry.text, '.md');
-          try { execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' }); } finally { rmTmp(tmpMd); }
+          try { execSync(`node "${join(import.meta.dirname, 'slack-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8', env: { ...process.env, CLIPLENS_NO_TOAST: '1' } }); } finally { rmTmp(tmpMd); }
         } else if (fmt === 'html') {
           const tmpMd = writeTmp(entry.text, '.md');
-          try { execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8' }); } finally { rmTmp(tmpMd); }
+          try { execSync(`node "${join(import.meta.dirname, 'html-clip.js')}" --file "${tmpMd}"`, { encoding: 'utf-8', env: { ...process.env, CLIPLENS_NO_TOAST: '1' } }); } finally { rmTmp(tmpMd); }
         } else {
           await writeText(entry.text);
         }
