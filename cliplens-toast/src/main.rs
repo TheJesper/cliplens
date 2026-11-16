@@ -44,11 +44,21 @@ fn main() {
         "--watch" => run_daemon(),
         "--notify" => {
             let req = parse_notify_args(&argv);
-            if send_message(&Message::Notify(req)).is_err() {
-                // Daemon not running -- fall back to a one-shot toast so the
-                // notification still shows.
-                let req = parse_notify_args(&argv);
-                show_toast_oneshot(req);
+            if send_message(&Message::Notify(req.clone())).is_err() {
+                // Daemon not running: start it and hand over, so every card goes through ONE
+                // process (stacking + de-duplication). Only if that fails, show a one-shot toast.
+                spawn_daemon_detached();
+                let mut sent = false;
+                for _ in 0..15 {
+                    std::thread::sleep(Duration::from_millis(100));
+                    if send_message(&Message::Notify(req.clone())).is_ok() {
+                        sent = true;
+                        break;
+                    }
+                }
+                if !sent {
+                    show_toast_oneshot(req);
+                }
             }
         }
         "--remind" => run_remind_cli(&argv),
@@ -167,6 +177,17 @@ const MAX_ACTIVE: usize = 6;
 const MAX_REMINDER_CARDS: usize = 4;
 const MAX_CONNS: usize = 16;
 const MAX_MSG_BYTES: u64 = 64 * 1024;
+/// The same card twice within this window is one event shown twice (two callers reporting the
+/// same clip, a retry, a pen script plus its parent): show it once.
+const DEDUPE_MS: u128 = 2000;
+
+/// Identity of a card for de-duplication (id-carrying cards update in place and are never deduped).
+fn dedupe_key(req: &NotifyRequest) -> Option<String> {
+    if !req.id.trim().is_empty() {
+        return None;
+    }
+    Some(format!("{}{}{}{}{}", req.kind.trim(), req.title.trim(), req.subtitle.trim(), req.agent.trim(), req.format.trim()))
+}
 
 fn run_daemon() {
     use global_hotkey::{
@@ -251,9 +272,11 @@ fn run_daemon() {
             Ok(n) => n,
             Err(_) => return,
         };
+        // Name already taken = another daemon owns it (or a squatter). Exit instead of living on as
+        // a second, deaf daemon.
         let listener = match ListenerOptions::new().name(fs_name).create_sync() {
             Ok(l) => l,
-            Err(_) => return,
+            Err(_) => std::process::exit(0),
         };
         // One short-lived thread per connection, each bounded in size, and a cap on concurrent
         // connections: a stalled or hostile client can no longer block every other sender.
@@ -309,12 +332,20 @@ fn run_daemon() {
     let mut store = reminder::Store::open(&reminder::default_path());
     let mut last_due_check = Instant::now() - Duration::from_secs(10);
     let mut prev_mouse_down = false;
+    let mut recent: Vec<(String, Instant)> = Vec::new();
 
     event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(60));
 
         match event {
             Event::UserEvent(LoopCmd::Notify(req)) => {
+                if let Some(k) = dedupe_key(&req) {
+                    recent.retain(|(_, at)| at.elapsed().as_millis() < DEDUPE_MS);
+                    if recent.iter().any(|(rk, _)| *rk == k) {
+                        return;
+                    }
+                    recent.push((k, Instant::now()));
+                }
                 // Flood guard: at the cap, drop the oldest plain toast; reminders are never evicted.
                 if active.len() >= MAX_ACTIVE {
                     match active.iter().position(|t| t.reminder_id.is_none()) {
@@ -1185,6 +1216,30 @@ fn cursor_inside(window: &Window) -> bool {
 #[cfg(not(target_os = "windows"))]
 fn cursor_inside(_window: &Window) -> bool {
     true
+}
+
+#[cfg(test)]
+mod dedupe_tests {
+    use super::{dedupe_key, NotifyRequest};
+
+    #[test]
+    fn should_treat_the_same_card_as_a_duplicate_and_a_different_one_as_new() {
+        let mut a = NotifyRequest::default();
+        a.title = "Slack-clip klar".into();
+        a.agent = "pp".into();
+        let b = a.clone();
+        assert_eq!(dedupe_key(&a), dedupe_key(&b));
+        let mut c = a.clone();
+        c.title = "Teams-clip klar".into();
+        assert_ne!(dedupe_key(&a), dedupe_key(&c));
+    }
+
+    #[test]
+    fn should_never_dedupe_cards_that_update_in_place_by_id() {
+        let mut a = NotifyRequest::default();
+        a.id = "progress-1".into();
+        assert!(dedupe_key(&a).is_none());
+    }
 }
 
 #[cfg(test)]
