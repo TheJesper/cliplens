@@ -121,8 +121,8 @@ pub fn toast_html(v: &ToastView) -> String {
 img.emoji{{width:calc(32px*var(--scale));height:calc(32px*var(--scale));object-fit:contain;filter:none;image-rendering:-webkit-optimize-contrast;}}
 .text{{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(4px*var(--scale));}}
 .title{{display:flex;align-items:center;gap:calc(9px*var(--scale));min-width:0;
-  font-size:calc(21px*var(--scale));font-weight:600;line-height:1.15;}}
-.title .t{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+  font-size:calc(21px*var(--scale));font-weight:600;line-height:1.3;}}
+.title .t{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-bottom:0.08em;}}
 .chip{{flex:0 0 auto;font-size:calc(10px*var(--scale));font-weight:700;text-transform:uppercase;letter-spacing:0.4px;
   line-height:1;color:#F5EFE8;background:rgba(255,255,255,0.16);
   padding:calc(3px*var(--scale)) calc(7px*var(--scale));border-radius:calc(6px*var(--scale));}}
@@ -546,13 +546,13 @@ pub fn reminder_html(v: &ReminderView) -> String {
   border-radius:calc(22px*var(--scale));color:#F5EFE8;animation:pop 420ms cubic-bezier(0.22,1,0.36,1);}}
 .top{{display:flex;align-items:center;gap:calc(14px*var(--scale));min-width:0;}}
 .box{{flex:0 0 auto;width:calc(30px*var(--scale));height:calc(30px*var(--scale));box-sizing:border-box;
-  border:2px solid #2AA198;border-radius:calc(9px*var(--scale));background:rgba(255,255,255,0.06);
+  border:2px solid rgba(245,239,232,0.42);border-radius:calc(7px*var(--scale));background:transparent;
   cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:calc(20px*var(--scale));color:transparent;}}
-.box:hover{{background:rgba(42,161,152,0.28);color:#2AA198;}}
-.box.on{{background:#2AA198;color:#fff;}}
+.box:hover{{border-color:rgba(245,239,232,0.75);color:rgba(245,239,232,0.45);}}
+.box.on{{background:#2AA198;border-color:#2AA198;color:#fff;}}
 .text{{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(4px*var(--scale));}}
-.title{{display:flex;align-items:center;gap:calc(9px*var(--scale));min-width:0;font-size:calc(20px*var(--scale));font-weight:600;line-height:1.15;}}
-.title .t{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+.title{{display:flex;align-items:center;gap:calc(9px*var(--scale));min-width:0;font-size:calc(20px*var(--scale));font-weight:600;line-height:1.3;}}
+.title .t{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-bottom:0.08em;}}
 .chip{{flex:0 0 auto;font-size:calc(10px*var(--scale));font-weight:700;text-transform:uppercase;letter-spacing:0.4px;line-height:1;
   background:rgba(255,255,255,0.16);padding:calc(3px*var(--scale)) calc(7px*var(--scale));border-radius:calc(6px*var(--scale));}}
 .meta{{display:flex;align-items:baseline;gap:calc(6px*var(--scale));min-width:0;font-size:calc(13.5px*var(--scale));color:rgba(235,235,245,0.62);}}
