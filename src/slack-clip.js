@@ -8,6 +8,7 @@
  *   node slack-clip.js --file message.txt
  */
 import { writeFileSync, readFileSync, unlinkSync } from 'fs';
+import { safeUrl } from './links.js';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -110,8 +111,10 @@ function parseInline(text, parentAttrs, ops) {
     // Link: [text](url)
     const linkMatch = remaining.match(/^\[(.+?)\]\((.+?)\)/);
     if (linkMatch) {
-      const attrs = { ...parentAttrs, link: linkMatch[2] };
-      ops.push({ attributes: attrs, insert: linkMatch[1] });
+      const href = safeUrl(linkMatch[2]);
+      // Unsafe scheme (javascript:, file:, \\host): keep the words, never a clickable link.
+      const attrs = href ? { ...parentAttrs, link: href } : { ...parentAttrs };
+      ops.push({ attributes: attrs, insert: href ? linkMatch[1] : `${linkMatch[1]} (${linkMatch[2]})` });
       remaining = remaining.slice(linkMatch[0].length);
       continue;
     }
@@ -211,7 +214,7 @@ for ($i = 0; $i -lt 5; $i++) {
   catch { Start-Sleep -Milliseconds 200 }
 }
 `, '.ps1');
-  execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
+  execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { timeout: 30000 });
   rmTmp(tmpBin);
   rmTmp(tmpTxt);
   rmTmp(tmpPs);

@@ -68,7 +68,7 @@ if ($null -eq $s) { '' } else {
 }
 `, { encoding: 'utf-8', mode: 0o600 });
   try {
-    const b64 = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8' }).trim();
+    const b64 = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8', timeout: 30000 }).trim();
     return Buffer.from(b64, 'base64').toString('utf-8');
   } finally {
     try { unlinkSync(ps); } catch { /* already gone */ }
@@ -238,7 +238,7 @@ if ($null -eq $rb) { '' } else {
 }
 `, '.ps1');
         try {
-          const b64 = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { encoding: 'utf-8' }).trim();
+          const b64 = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { encoding: 'utf-8', timeout: 30000 }).trim();
           const got = Buffer.from(b64, 'base64').toString('utf-8');
           if (matches(got)) return;
         } finally {
@@ -251,14 +251,14 @@ if ($null -eq $rb) { '' } else {
         await writeTextPosix(text);
         const readCmd = IS_MAC ? 'pbpaste' : null;
         if (readCmd) {
-          const got = execSync(readCmd, { encoding: 'utf-8' });
+          const got = execSync(readCmd, { encoding: 'utf-8', timeout: 30000 });
           if (matches(got)) return;
         } else {
           // Linux: try the common readers; if none is installed we can't verify,
           // but the write above already succeeded or threw.
           for (const [cmd, args] of [['wl-paste', []], ['xclip', '-selection clipboard -o'.split(' ')], ['xsel', '--clipboard --output'.split(' ')]]) {
             try {
-              const got = execSync([cmd, ...args].join(' '), { encoding: 'utf-8' });
+              const got = execSync([cmd, ...args].join(' '), { encoding: 'utf-8', timeout: 30000 });
               if (matches(got)) return;
             } catch { /* reader not installed — try next */ }
           }
@@ -283,7 +283,7 @@ if ($null -eq $rb) { '' } else {
     try {
       const fmts = execSync(
         `powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; @([System.Windows.Forms.Clipboard]::GetDataObject().GetFormats()) -join ','"`,
-        { encoding: 'utf-8' }
+        { encoding: 'utf-8', timeout: 15000 }
       );
       if (/EnterpriseDataProtectionId/i.test(fmts)) {
         wipHint =

@@ -21,9 +21,7 @@
  * Idempotent: merges into existing configs, overwrites the ClipLens entries,
  * never touches other servers/skills. Safe to re-run after every git pull.
  */
-import {
-  readFileSync, writeFileSync, existsSync, mkdirSync, statSync, copyFileSync, renameSync,
-} from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, copyFileSync, renameSync, chmodSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { CLIENTS, REGISTRY_DIR, REGISTRY_FILE, mcpEntry } from './lib/clients.mjs';
@@ -93,16 +91,20 @@ function safeWriteFile(file, contents, { validateJson = false } = {}) {
   const bak = `${file}.bak`;
   const tmp = `${file}.tmp-${process.pid}`;
   const had = existsSync(file);
+  // Keep the original's permissions (configs often hold tokens and are 0600); new files are 0600.
+  let mode = 0o600;
   if (had) {
-    try { copyFileSync(file, bak); } catch { /* best-effort backup */ }
+    try { mode = statSync(file).mode & 0o777; } catch { /* default */ }
+    try { copyFileSync(file, bak); chmodSync(bak, mode); } catch { /* best-effort backup */ }
   }
   try {
-    writeFileSync(tmp, contents, 'utf8');
+    writeFileSync(tmp, contents, { encoding: 'utf8', mode });
     if (validateJson) JSON.parse(readFileSync(tmp, 'utf8')); // must parse
     renameSync(tmp, file); // atomic on same volume
+    try { chmodSync(file, mode); } catch { /* Windows: ACLs */ }
   } catch (e) {
     // Clean up temp, restore original from backup if we clobbered anything.
-    try { if (existsSync(tmp)) writeFileSync(tmp, ''); } catch { /* ignore */ }
+    try { if (existsSync(tmp)) unlinkSync(tmp); } catch { /* ignore */ }
     if (had && existsSync(bak)) {
       try { copyFileSync(bak, file); } catch { /* ignore */ }
     }

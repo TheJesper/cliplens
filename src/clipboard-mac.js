@@ -60,7 +60,7 @@ function runSwiftBinary(code) {
 /** Capture clipboard as plain text. */
 export async function captureText() {
   try {
-    const text = execSync('pbpaste', { encoding: 'utf-8' });
+    const text = execSync('pbpaste', { encoding: 'utf-8', timeout: 30000 });
     return text;
   } catch {
     return '';
@@ -170,7 +170,7 @@ export async function captureSnapshot(appHint) {
 
 /** Write plain text to clipboard. */
 export async function writeText(text) {
-  execSync('pbcopy', { input: text, encoding: 'utf-8' });
+  execSync('pbcopy', { input: text, encoding: 'utf-8', timeout: 15000 });
 }
 
 /**

@@ -8,6 +8,7 @@
  *   clipmail "**Bold** and `code`"
  */
 import { writeFileSync, readFileSync, unlinkSync } from 'fs';
+import { safeUrl, escHtml } from './links.js';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -91,6 +92,8 @@ function markdownToHtml(text) {
 
 /** Process inline formatting */
 function processInline(text) {
+  // Text is escaped first: raw HTML in a clip renders as text, never as markup (SECURITY).
+  text = escHtml(text);
   // Bold: **text**
   text = text.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   // Italic: *text* or _text_
@@ -99,7 +102,11 @@ function processInline(text) {
   // Code: `text`
   text = text.replace(/`(.+?)`/g, '<code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;font-family:Consolas,monospace;font-size:13px">$1</code>');
   // Links: [text](url)
-  text = text.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" style="color:#0563C1">$1</a>');
+  // Only http(s)/mailto become links; anything else (javascript:, file:, \\host) stays plain text.
+  text = text.replace(/\[(.+?)\]\((.+?)\)/g, (m, label, url) => {
+    const href = safeUrl(url.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"'));
+    return href ? `<a href="${escHtml(href)}" style="color:#0563C1">${label}</a>` : `${label} (${url})`;
+  });
   return text;
 }
 
@@ -179,7 +186,7 @@ for ($i = 0; $i -lt 5; $i++) {
   catch { Start-Sleep -Milliseconds 200 }
 }
 `, '.ps1');
-  execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
+  execSync(`powershell -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { timeout: 30000 });
   rmTmp(tmpHtml);
   rmTmp(tmpTxt);
   rmTmp(tmpPs);

@@ -212,7 +212,16 @@ async function saveClipImage({ reading = false, agent, full = false } = {}) {
   // clipboard data. The caller can toggle "ask me first" via state.askImageDir.
   const dir = await imageDir();
   try { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); } catch { /* fall through */ }
-  const outPath = join(dir, 'cliplens-clip-image.png');
+  // Random name per save (no fixed, guessable path) and old saves (>1 h) are removed, so
+  // screenshots of the user's screen do not pile up in the temp folder.
+  const { randomUUID } = await import('crypto');
+  try {
+    const { readdirSync, statSync, unlinkSync } = await import('fs');
+    for (const f of readdirSync(dir)) {
+      if (/^cliplens-clip-image(-[0-9a-f-]+)?\.png$/.test(f) && Date.now() - statSync(join(dir, f)).mtimeMs > 3600_000) unlinkSync(join(dir, f));
+    }
+  } catch { /* best effort */ }
+  const outPath = join(dir, `cliplens-clip-image-${randomUUID()}.png`);
   let result;
   if (process.platform === 'darwin') {
     // macOS: use the Swift-based saveClipboardImage from clipboard-mac.js
@@ -256,7 +265,7 @@ if ($img) {
 }
 `, '.ps1');
     try {
-      result = execSync(`powershell -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8' }).trim();
+      result = execSync(`powershell -ExecutionPolicy Bypass -STA -File "${ps}"`, { encoding: 'utf-8', timeout: 30000 }).trim();
     } finally {
       rmTmp(ps);
     }
@@ -674,6 +683,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  // SECURITY: no single argument may be huge (the server is single-threaded; parsers are linear-ish).
+  const tooBig = Object.entries(args || {}).find(([, v]) => (typeof v === 'string' ? v.length : JSON.stringify(v ?? '').length) > 1_000_000);
+  if (tooBig) return { content: [{ type: 'text', text: `Error: argument \`${tooBig[0]}\` is larger than 1 MB.` }] };
 
   switch (name) {
     case 'cliplens_ping': {
@@ -1127,6 +1139,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!a.path) {
         return { content: [{ type: 'text', text: 'cliplens_safe_image needs a `path` to an image file.' }] };
       }
+      if (!/\.(png|jpe?g|gif|bmp|webp)$/i.test(String(a.path || ''))) {
+        return { content: [{ type: 'text', text: 'Only image files (.png .jpg .jpeg .gif .bmp .webp) can be used here.' }] };
+      }
       const { existsSync, mkdirSync } = await import('fs');
       const { join: pjoin, basename } = await import('path');
       if (!existsSync(a.path)) {
@@ -1158,6 +1173,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const a = args || {};
       const { existsSync } = await import('fs');
       const { join: pjoin } = await import('path');
+      if (a.path && !/\.(png|jpe?g|gif|bmp|webp)$/i.test(String(a.path))) {
+        return { content: [{ type: 'text', text: 'Only image files (.png .jpg .jpeg .gif .bmp .webp) can be put on the clipboard here.' }] };
+      }
       let imagePath = a.path;
       if (!imagePath && a.icon) {
         const size = String(a.size || '32');

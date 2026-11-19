@@ -100,7 +100,7 @@ pub fn toast_html(v: &ToastView) -> String {
     };
 
     format!(
-        r#"<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
+        r#"<!DOCTYPE html><html oncontextmenu="return false"><head><meta charset="UTF-8"/><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"/><style>
 {base}
 :root{{--scale:{scale};--accent:{accent};}}
 .wrap{{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;}}
@@ -244,7 +244,7 @@ pub fn picker_html(entries: &[ClipEntry], selected: usize) -> String {
         let icon_b64 = icon_for(type_label).trim();
         let sender = if e.agent.is_empty() { "cliplens" } else { &e.agent };
         rows.push_str(&format!(
-            r#"<div class="row{active}" data-idx="{idx}">
+            r#"<div class="row{active}" data-idx="{idx}" title="{tip}">
   <img class="ico" src="data:image/png;base64,{icon}" alt=""/>
   <div class="text">
     <div class="label">{label}</div>
@@ -254,7 +254,9 @@ pub fn picker_html(entries: &[ClipEntry], selected: usize) -> String {
             active = active,
             idx = i,
             icon = icon_b64,
-            label = md_line(&e.title),
+            // SECURITY: the row shows the text that will be pasted, never only a (possibly misleading) title.
+            label = md_line(&e.text.chars().take(160).collect::<String>()),
+            tip = esc(&e.title),
             who = esc(sender),
             fmt = esc(type_label),
         ));
@@ -263,7 +265,7 @@ pub fn picker_html(entries: &[ClipEntry], selected: usize) -> String {
         rows.push_str(r#"<div class="empty">Inga clips ännu</div>"#);
     }
     format!(
-        r#"<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
+        r#"<!DOCTYPE html><html oncontextmenu="return false"><head><meta charset="UTF-8"/><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"/><style>
 {base}
 .wrap{{position:fixed;inset:0;padding:14px;box-sizing:border-box;
   background:rgba(74,54,40,0.94);border-radius:20px;color:#F5EFE8;
@@ -536,7 +538,7 @@ pub fn reminder_html(v: &ReminderView) -> String {
         format!(r#"<span class="chip">{}</span>"#, esc(v.note))
     };
     format!(
-        r#"<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
+        r#"<!DOCTYPE html><html oncontextmenu="return false"><head><meta charset="UTF-8"/><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"/><style>
 {base}
 :root{{--scale:{scale};}}
 .wrap{{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;}}

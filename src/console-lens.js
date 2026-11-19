@@ -21,9 +21,9 @@ mkdirSync(outDir, { recursive: true });
 // Get clipboard (cross-platform)
 let raw;
 if (process.platform === 'darwin') {
-  raw = execSync('pbpaste', { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+  raw = execSync('pbpaste', { encoding: 'utf-8', timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
 } else {
-  raw = execSync('powershell -command "Get-Clipboard -Raw"', { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+  raw = execSync('powershell -command "Get-Clipboard -Raw"', { encoding: 'utf-8', timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
 }
 
 if (process.argv.includes('--raw')) {

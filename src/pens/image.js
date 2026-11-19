@@ -73,7 +73,7 @@ $png.Dispose()
     '.ps1'
   );
   try {
-    execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`);
+    execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { timeout: 30000 });
   } finally {
     rmTmp(tmpPs);
   }

@@ -92,7 +92,7 @@ if ($edge -gt 0 -and $longest -gt $edge) {
 $img.Dispose()
 `, { encoding: 'utf-8', mode: 0o600 });
   try {
-    return execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { encoding: 'utf-8' }).trim();
+    return execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${tmpPs}"`, { encoding: 'utf-8', timeout: 30000 }).trim();
   } finally {
     try { unlinkSync(tmpPs); } catch { /* ignore */ }
   }

@@ -19,6 +19,7 @@
  *   node src/pens/mural.js --file sticky.md
  */
 import { writeFileSync, readFileSync, unlinkSync } from 'fs';
+import { safeUrl } from '../links.js';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -35,7 +36,8 @@ function esc(s) {
   return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /**
@@ -117,7 +119,8 @@ function toHtmlTextWithLink(text, url) {
   const lines = String(text ?? '').split('\n');
   const first = lines[0] ?? '';
   const rest = lines.slice(1);
-  const head = `<div><a href="${esc(url)}">${esc(first)}</a></div>`;
+  const href = safeUrl(url);
+  const head = href ? `<div><a href="${esc(href)}">${esc(first)}</a></div>` : `<div>${esc(first)}</div>`;
   const body = rest.map((l) => (l === '' ? '<div><br></div>' : `<div>${esc(l)}</div>`)).join('');
   return `<html v="1">${head}${body}</html>`;
 }
@@ -431,7 +434,7 @@ for ($i = 0; $i -lt 5; $i++) {
     '.ps1'
   );
   try {
-    execSync(`pwsh -NoProfile -STA -ExecutionPolicy Bypass -File "${tmpPs}"`);
+    execSync(`pwsh -NoProfile -STA -ExecutionPolicy Bypass -File "${tmpPs}"`, { timeout: 30000 });
   } finally {
     rmTmp(tmpTxt);
     rmTmp(tmpPs);

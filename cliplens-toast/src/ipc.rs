@@ -1,8 +1,8 @@
 // ipc.rs -- shared notification request type + transport helpers.
 //
 // Transport: a local socket via the `interprocess` crate.
-//   Windows: named pipe  \\.\pipe\cliplens-daemon
-//   Unix:    unix socket  $TMPDIR/cliplens-daemon.sock (path-based)
+//   Windows: named pipe  \\.\pipe\cliplens-daemon-<user>
+//   Unix:    unix socket  $TMPDIR/cliplens-daemon-<user>.sock (path-based)
 //
 // Protocol: one JSON object per connection, newline-terminated.
 
@@ -138,15 +138,22 @@ pub enum Message {
 }
 
 /// Platform-appropriate socket name.
+/// Per user: another account on the machine can neither collide with nor pre-create our name.
+fn user_tag() -> String {
+    let u = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
+    let t: String = u.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').take(40).collect();
+    if t.is_empty() { "user".into() } else { t.to_lowercase() }
+}
+
 #[cfg(windows)]
 pub fn socket_name() -> String {
-    r"\\.\pipe\cliplens-daemon".to_string()
+    format!(r"\\.\pipe\cliplens-daemon-{}", user_tag())
 }
 
 #[cfg(unix)]
 pub fn socket_name() -> String {
     let base = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
-    format!("{}/cliplens-daemon.sock", base.trim_end_matches('/'))
+    format!("{}/cliplens-daemon-{}.sock", base.trim_end_matches('/'), user_tag())
 }
 
 #[cfg(test)]
